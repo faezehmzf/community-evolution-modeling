@@ -22,6 +22,10 @@ artifacts/**/raw/
 artifacts/discovery/**/*_full.json
 artifacts/discovery/runs/
 
+# Pilot outputs (never commit large/binary or private data)
+artifacts/pilot/
+**/node_index_map.parquet
+
 # Environment / secrets (never commit)
 .env
 *.local.env

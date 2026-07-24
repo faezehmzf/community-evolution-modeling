@@ -1,0 +1,32 @@
+{
+  "run_id": "2026-07-24T144307Z_git-1e1a558_cfg-e02944",
+  "created_at": "2026-07-24T14:43:07.468661+00:00",
+  "runtime_environment": {
+    "python_version": "3.12.3",
+    "platform": "Linux-6.12.94+-x86_64-with-glibc2.39",
+    "machine": "x86_64",
+    "captured_at": "2026-07-24T14:43:07.469520+00:00",
+    "git_commit": "1e1a558"
+  },
+  "stages": {
+    "phase2_inventory": {
+      "state": "partial-sample",
+      "detail": {}
+    },
+    "phase3_dataset_a": {
+      "state": "complete",
+      "detail": {}
+    },
+    "phase4_dataset_b": {
+      "state": "sample-complete",
+      "detail": {}
+    },
+    "phase5_reconciliation": {
+      "state": "sample-complete",
+      "detail": {}
+    }
+  },
+  "outputs": {},
+  "drive_output_folder_id_present": true,
+  "note": "Sanitized summary. Full artifacts (parquet, per-file logs) live in the git-ignored run directory."
+}

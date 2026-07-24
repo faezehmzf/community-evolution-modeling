@@ -68,7 +68,7 @@ def test_build_source_autodetect(dataset_dir: Path):
 
 
 def test_extract_drive_folder_id():
-    fid = "1kdOoS7J5CtKiCn2XPOCFtw0AOGWr5UHs"
+    fid = "0EXAMPLEfolderID000000000000abcdEFG"  # synthetic, not a real folder id
     assert extract_drive_folder_id(fid) == fid
     url = f"https://drive.google.com/drive/folders/{fid}?usp=sharing"
     assert extract_drive_folder_id(url) == fid

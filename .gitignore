@@ -24,6 +24,8 @@ artifacts/discovery/runs/
 
 # Pilot outputs (never commit large/binary or private data)
 artifacts/pilot/
+artifacts/pilot_outputs/
+artifacts/pilot*/
 **/node_index_map.parquet
 
 # Environment / secrets (never commit)

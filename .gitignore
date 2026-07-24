@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.mypy_cache/
+
+# Local caches and temporary source copies (never commit raw data)
+cache/
+.cache/
+*.tmp
+tmp/
+
+# Discovery artifacts: produced locally, keep large/binary and private data OUT of git.
+# Only sanitized *.json summaries and the .gitkeep are committed (whitelisted below).
+artifacts/**/*.parquet
+artifacts/**/*.xlsx
+artifacts/**/*.csv
+artifacts/**/logs/
+artifacts/**/raw/
+artifacts/discovery/**/*_full.json
+artifacts/discovery/runs/
+
+# Environment / secrets (never commit)
+.env
+*.local.env
+config/*.local.env
+service_account*.json
+*credentials*.json
+*token*.json

@@ -1,0 +1,17 @@
+# Core data tooling for the TDMEC data-discovery pass.
+# Versions are pinned loosely; refresh with `pip install -U` when appropriate.
+pandas>=2.2
+pyarrow>=15.0
+openpyxl>=3.1
+
+# Google Drive access.
+# gdown is used for anonymous (public "anyone with the link") folder/file reads.
+gdown>=5.1
+# The Google API client stack is used when service-account / OAuth credentials
+# are supplied via the Cloud Agent environment (authenticated read + output write).
+google-api-python-client>=2.100
+google-auth>=2.30
+google-auth-httplib2>=0.2
+
+# Testing
+pytest>=8.0

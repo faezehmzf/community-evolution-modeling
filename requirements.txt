@@ -3,6 +3,8 @@
 pandas>=2.2
 pyarrow>=15.0
 openpyxl>=3.1
+# Fast (Rust) xlsx reader used for bulk row/column inspection of large workbooks.
+python-calamine>=0.2
 
 # Google Drive access.
 # gdown is used for anonymous (public "anyone with the link") folder/file reads.

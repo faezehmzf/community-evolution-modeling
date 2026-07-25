@@ -1,0 +1,24 @@
+{
+  "dataset": "B",
+  "n_schema_families": 1,
+  "families": {
+    "f903842ea287": {
+      "columns": [
+        "id",
+        "created_at",
+        "user",
+        "text",
+        "likes",
+        "retweets",
+        "reply_count",
+        "quoted_count",
+        "bookmarks",
+        "views"
+      ],
+      "n_files_inspected_in_family": 12,
+      "column_order_variants": 1
+    }
+  },
+  "inspected_files_count": 12,
+  "note": "Column names + family signatures only; no tweet text, IDs, URLs, or tokens."
+}

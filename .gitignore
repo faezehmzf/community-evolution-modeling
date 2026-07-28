@@ -28,6 +28,9 @@ artifacts/pilot_outputs/
 artifacts/pilot*/
 **/node_index_map.parquet
 
+# Phase 2 diagnostics run outputs (aggregates may be regenerated locally)
+artifacts/diagnostics/
+
 # Environment / secrets (never commit)
 .env
 *.local.env

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "tdmec-discovery"
 version = "0.1.0"
-description = "Read-only data-access verification and forensic discovery tooling for TDMEC Dataset A / Dataset B, plus Phase 1 TDMEC contracts/schemas."
+description = "Read-only data-access verification, Phase 1 TDMEC contracts/schemas, and Phase 2 privacy-safe diagnostics."
 requires-python = ">=3.10"
 dependencies = [
     "pandas>=2.2",
@@ -27,12 +27,13 @@ test = ["pytest>=8.0"]
 
 [project.scripts]
 tdmec-discovery = "tdmec_discovery.cli:main"
+tdmec-diagnostics = "tdmec_diagnostics.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["tdmec*", "tdmec_discovery*", "tdmec_pilot*"]
-# Note: the tdmec* pattern already matches tdmec_discovery and tdmec_pilot;
-# explicit entries are retained for clarity and to avoid accidental narrowing.
+include = ["tdmec*", "tdmec_discovery*", "tdmec_pilot*", "tdmec_diagnostics*"]
+# Note: the tdmec* pattern already matches tdmec_discovery, tdmec_pilot, and
+# tdmec_diagnostics; explicit entries are retained for clarity.
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

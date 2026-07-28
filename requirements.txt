@@ -20,3 +20,6 @@ PyYAML>=6.0
 
 # Testing
 pytest>=8.0
+
+# Phase 1 tensor/mask validation (also pulled transitively by pandas)
+numpy>=1.26

@@ -21,6 +21,10 @@ duplicated here. Phase 2 produces **evidence only**.
 
 **Privacy:** `privacy.py` — `test_privacy_safe_*`, CLI redaction.
 
-**Streaming / resume:** `checkpoint`, `pipeline` — chunk independence, resume equivalence, checksum/config invalidation, no double-count.
+**Streaming / resume:** `checkpoint`, `pipeline`, `transaction_state` —
+source-row chunk resume, single-transaction checkpoint authority, bounded
+dedup retained state, split-mirror recovery, sealed idempotence, explicit
+checkpoint-root preservation, checksum/config invalidation, and no
+loss/double-count.
 
 **Phase 1 regression:** `test_phase1_regression_*` + full Phase 1 suite.

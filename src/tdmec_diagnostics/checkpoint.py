@@ -17,6 +17,7 @@ class FileCheckpoint:
     rows_inspected: int = 0
     rows_accepted: int = 0
     rows_rejected: int = 0
+    last_source_row_number: int = 0
     complete: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
@@ -27,6 +28,7 @@ class FileCheckpoint:
             "rows_inspected": self.rows_inspected,
             "rows_accepted": self.rows_accepted,
             "rows_rejected": self.rows_rejected,
+            "last_source_row_number": self.last_source_row_number,
             "complete": self.complete,
         }
 
@@ -39,6 +41,7 @@ class FileCheckpoint:
             rows_inspected=int(d.get("rows_inspected", 0)),
             rows_accepted=int(d.get("rows_accepted", 0)),
             rows_rejected=int(d.get("rows_rejected", 0)),
+            last_source_row_number=int(d.get("last_source_row_number", 0)),
             complete=bool(d.get("complete", False)),
         )
 
@@ -62,24 +65,31 @@ class DiagnosticsCheckpointStore:
     def load(self) -> "DiagnosticsCheckpointStore":
         if self.path.is_file():
             data = json.loads(self.path.read_text(encoding="utf-8"))
-            stored_hash = data.get("config_hash")
-            if stored_hash != self.config_hash:
-                raise ConfigIncompatibleError(
-                    f"checkpoint config_hash mismatch: stored={stored_hash} "
-                    f"current={self.config_hash}"
-                )
-            self.files = {
-                k: FileCheckpoint.from_dict(v)
-                for k, v in data.get("files", {}).items()
-            }
+            self.load_payload(data)
         return self
 
-    def save(self) -> None:
-        payload = {
+    def to_payload(self) -> Dict[str, Any]:
+        return {
             "schema_version": "tdmec-phase2-checkpoint-v1",
             "config_hash": self.config_hash,
             "files": {k: v.to_dict() for k, v in sorted(self.files.items())},
         }
+
+    def load_payload(self, data: Dict[str, Any]) -> "DiagnosticsCheckpointStore":
+        stored_hash = data.get("config_hash")
+        if stored_hash != self.config_hash:
+            raise ConfigIncompatibleError(
+                f"checkpoint config_hash mismatch: stored={stored_hash} "
+                f"current={self.config_hash}"
+            )
+        self.files = {
+            key: FileCheckpoint.from_dict(value)
+            for key, value in data.get("files", {}).items()
+        }
+        return self
+
+    def save(self, payload: Optional[Dict[str, Any]] = None) -> None:
+        payload = payload or self.to_payload()
         atomic_write_json(self.path, payload)
 
     def completed_chunks(self, source_file: str) -> Set[int]:
@@ -102,6 +112,7 @@ class DiagnosticsCheckpointStore:
         rows_inspected: int,
         rows_accepted: int,
         rows_rejected: int,
+        last_source_row_number: Optional[int] = None,
         source_checksum: Optional[str] = None,
     ) -> None:
         cp = self.files.get(source_file)
@@ -121,6 +132,12 @@ class DiagnosticsCheckpointStore:
             cp.rows_inspected += rows_inspected
             cp.rows_accepted += rows_accepted
             cp.rows_rejected += rows_rejected
+            if last_source_row_number is not None:
+                if int(last_source_row_number) < cp.last_source_row_number:
+                    raise ValueError(
+                        f"source row progress moved backward for {source_file}"
+                    )
+                cp.last_source_row_number = int(last_source_row_number)
 
     def mark_file_complete(self, source_file: str) -> None:
         cp = self.files.get(source_file)

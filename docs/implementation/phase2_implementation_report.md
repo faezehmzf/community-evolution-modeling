@@ -60,27 +60,39 @@ Fails clearly when sources or node map are absent. No credentials embedded.
 - Added concrete A/B adapters + schema contracts + workbook streaming I/O
 - Made real-mode CLI operational with full configuration surface
 - Fixed unbounded timestamp/length retention (min/max; exact frequency counters)
-- Implemented accumulator-state resume (skip completed files; no double-count)
+- Implemented transactionally consistent, source-row-aligned chunk resume
 - Separated scientific vs engineering config hash (`chunk_size` excluded)
 - Documented exact quantiles; production N=16736 default coverage denominator
 - Strengthened tests (38 Phase 2 tests)
 
 ## 6. Streaming / resume semantics
 
-- Per-file processing with chunked observation (`chunk_size`)
-- Accumulator state persisted after each completed file
-- Resume skips completed files and continues from saved aggregates
-- Restart clears checkpoints/reports
+- Workbook adapters stream from the last transactionally committed source row
+- Chunk boundaries never split the multiple diagnostic records emitted by one
+  Dataset A source row
+- Exact dedup occurrences are stored as privacy-safe hashes and provenance in
+  a disk-backed SQLite working store, not Python grouping maps
+- One SQLite transaction commits dedup changes, bounded accumulator aggregates,
+  and checkpoint progress together
+- `diagnostics_checkpoint.json` and `accumulator_state.json` are inspection
+  mirrors; an unsealed resume uses the SQLite transaction as its authority
+- The working SQLite file is removed only after all final reports and required
+  JSON checkpoint artifacts are sealed successfully
+- Completed files and committed source rows are not reprocessed
+- Restart clears checkpoints, working transaction state, reports, and manifest
 - Config-hash and source-checksum mismatches hard-fail
-- Scientific outputs independent of chunk size
-- Bounded memory: no full-corpus length lists; dedup maps store hashes only
+- Scientific outputs remain independent of engineering chunk size
+- Exact text quantiles use bounded frequency counters; dedup memory does not
+  grow with processed occurrence count
+- Final JSON artifacts and canonical scientific hashes are streamed, avoiding
+  an additional complete serialized copy in memory
 
 ## 7. Exact commands
 
 ```bash
 python3 -m pip install -e ".[test]" -r requirements.txt
 python3 -c "import tdmec, tdmec_diagnostics, tdmec_discovery, tdmec_pilot; print(tdmec.__version__, tdmec_diagnostics.__version__)"
-python3 -m pytest tests/test_phase2_diagnostics.py tests/test_phase1_contracts.py tests/test_tooling.py tests/test_pilot.py -v --tb=short
+python3 -m pytest -p no:cacheprovider -v --tb=short
 python3 -m tdmec_diagnostics.cli --help
 python3 -m tdmec_diagnostics.cli --mode synthetic --output-root ./artifacts --run-id smoke --resume-mode restart
 ```

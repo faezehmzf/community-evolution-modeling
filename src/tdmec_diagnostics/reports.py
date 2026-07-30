@@ -5,7 +5,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from tdmec.hashing import hash_canonical, sha256_bytes
+from tdmec.hashing import hash_canonical_json_native
 from tdmec_diagnostics import constants as DC
 from tdmec_diagnostics.privacy import assert_privacy_safe_mapping, sanitize_warning_message
 from tdmec_diagnostics.status import assert_not_certified, finalize_run_status
@@ -28,7 +28,7 @@ def scientific_content_hash(report: Dict[str, Any]) -> str:
             "captured_at",
         }
     }
-    return hash_canonical(payload)
+    return hash_canonical_json_native(payload)
 
 
 def build_warnings_report(

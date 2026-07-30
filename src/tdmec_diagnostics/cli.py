@@ -31,7 +31,10 @@ def build_parser() -> argparse.ArgumentParser:
         type=str,
         choices=["resume", "restart"],
         default=None,
-        help="resume (default) skips completed files; restart clears run state",
+        help=(
+            "resume (default) continues after the last transactionally "
+            "committed source row; restart clears run state"
+        ),
     )
     p.add_argument("--chunk-size", type=int, default=None)
     p.add_argument("--provisional-start", type=str, default=None)

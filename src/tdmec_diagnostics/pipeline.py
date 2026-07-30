@@ -2,10 +2,9 @@
 from __future__ import annotations
 
 import json
-import shutil
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from tdmec import constants as C
 from tdmec.hashing import sha256_file
@@ -13,7 +12,6 @@ from tdmec_diagnostics import constants as DC
 from tdmec_diagnostics.adapters import (
     AdapterConfigurationError,
     NodeUniverseLookup,
-    build_node_universe_lookup_from_ids,
     get_adapter,
     load_node_universe_lookup,
 )
@@ -57,17 +55,16 @@ from tdmec_diagnostics.reports import (
     seal_report,
     scientific_content_hash,
 )
-from tdmec_diagnostics.schema_contracts import (
-    DATASET_A_ADAPTER_ID,
-    DATASET_B_ADAPTER_ID,
-)
 from tdmec_diagnostics.status import finalize_run_status
-from tdmec_diagnostics.streaming import iter_chunks
 from tdmec_diagnostics.text_length_diag import (
     TextLengthAccumulator,
     human_text_length_summary,
 )
 from tdmec_diagnostics.tokenizer import NullTokenizerProbe, WhitespaceTokenizerProbe
+from tdmec_diagnostics.transaction_state import (
+    TransactionalRunState,
+    TransactionStateError,
+)
 
 
 @dataclass
@@ -95,6 +92,11 @@ class DiagnosticsPipeline:
 
     layout: Optional[DiagnosticsRunLayout] = field(default=None, init=False)
     checkpoint: Optional[DiagnosticsCheckpointStore] = field(default=None, init=False)
+    transaction_state: Optional[TransactionalRunState] = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
 
     def __post_init__(self) -> None:
         self.output_root = Path(self.output_root)
@@ -114,16 +116,28 @@ class DiagnosticsPipeline:
         )
         if self.config.resume_mode == "restart":
             self._restart_run_state()
-        elif self.config.enable_checkpoint and self.checkpoint.path.is_file():
+        elif (
+            self.config.enable_checkpoint
+            and self.checkpoint.path.is_file()
+            and not (
+                self.checkpoint.root / TransactionalRunState.FILENAME
+            ).is_file()
+        ):
             self.checkpoint.load()
 
     def _restart_run_state(self) -> None:
         assert self.layout is not None and self.checkpoint is not None
         if self.checkpoint.path.is_file():
             self.checkpoint.path.unlink()
-        state_path = self.layout.checkpoint_dir / "accumulator_state.json"
+        state_path = self._accumulator_state_path()
         if state_path.is_file():
             state_path.unlink()
+        transaction_path = (
+            self.checkpoint.root / TransactionalRunState.FILENAME
+        )
+        transaction_path.unlink(missing_ok=True)
+        for suffix in ("-journal", "-wal", "-shm"):
+            Path(f"{transaction_path}{suffix}").unlink(missing_ok=True)
         for p in list(self.layout.reports_dir.glob("*.json")):
             p.unlink()
         for p in list(self.layout.human_dir.glob("*.md")):
@@ -151,17 +165,17 @@ class DiagnosticsPipeline:
         return int(C.N_NODES)
 
     def _accumulator_state_path(self) -> Path:
-        assert self.layout is not None
-        return self.layout.checkpoint_dir / "accumulator_state.json"
+        assert self.checkpoint is not None
+        return self.checkpoint.root / "accumulator_state.json"
 
-    def _save_accumulators(
+    def _accumulator_payload(
         self,
         cal: CalendarAccumulator,
         dedup: DedupAccumulator,
         text: TextLengthAccumulator,
         cov: CoverageAccumulator,
-    ) -> None:
-        payload = {
+    ) -> Dict[str, Any]:
+        return {
             "schema_version": "tdmec-phase2-accumulator-state-v1",
             "config_hash": self.config.config_hash(),
             "calendar": cal.to_state(),
@@ -169,8 +183,69 @@ class DiagnosticsPipeline:
             "text_length": text.to_state(),
             "coverage": cov.to_state(),
         }
-        assert_privacy_safe_mapping(payload)
-        atomic_write_json(self._accumulator_state_path(), payload)
+
+    def _publish_checkpoint_mirrors(
+        self,
+        checkpoint_payload: Dict[str, Any],
+        accumulator_payload: Dict[str, Any],
+    ) -> None:
+        assert self.checkpoint is not None
+        assert_privacy_safe_mapping(accumulator_payload)
+        self.checkpoint.save(checkpoint_payload)
+        atomic_write_json(self._accumulator_state_path(), accumulator_payload)
+
+    def _commit_progress(
+        self,
+        cal: CalendarAccumulator,
+        dedup: DedupAccumulator,
+        text: TextLengthAccumulator,
+        cov: CoverageAccumulator,
+    ) -> None:
+        assert self.checkpoint is not None
+        checkpoint_payload = self.checkpoint.to_payload()
+        accumulator_payload = self._accumulator_payload(cal, dedup, text, cov)
+        assert_privacy_safe_mapping(accumulator_payload)
+        if self.transaction_state is None:
+            self._publish_checkpoint_mirrors(
+                checkpoint_payload,
+                accumulator_payload,
+            )
+            return
+        self.transaction_state.commit_snapshot(
+            checkpoint_payload,
+            accumulator_payload,
+        )
+        self._publish_checkpoint_mirrors(
+            checkpoint_payload,
+            accumulator_payload,
+        )
+
+    def _begin_progress_transaction(self) -> None:
+        if self.transaction_state is not None:
+            self.transaction_state.begin()
+
+    def _rollback_progress_transaction(self) -> None:
+        if self.transaction_state is not None:
+            self.transaction_state.rollback()
+
+    def _load_transaction_state(self) -> Optional[Tuple[Dict[str, Any], Dict[str, Any]]]:
+        assert self.checkpoint is not None
+        self.transaction_state = TransactionalRunState(
+            self.checkpoint.root,
+            self.config.config_hash(),
+        )
+        if not self.transaction_state.has_snapshot:
+            if self.checkpoint.path.is_file() or self._accumulator_state_path().is_file():
+                raise TransactionStateError(
+                    "unsealed legacy checkpoint state has no transactional "
+                    "authority; restart with a new run or resume_mode='restart'"
+                )
+            return None
+        checkpoint_payload, accumulator_payload, _generation = (
+            self.transaction_state.load_snapshot()
+        )
+        self.checkpoint.load_payload(checkpoint_payload)
+        return checkpoint_payload, accumulator_payload
 
     def _load_accumulators(
         self,
@@ -185,10 +260,20 @@ class DiagnosticsPipeline:
         CoverageAccumulator,
         bool,
     ]:
-        path = self._accumulator_state_path()
-        if not path.is_file():
+        transaction_snapshot = (
+            self._load_transaction_state()
+            if self.config.enable_checkpoint
+            else None
+        )
+        if transaction_snapshot is None:
             cal = CalendarAccumulator(boundaries=boundaries)
-            dedup = DedupAccumulator()
+            dedup = DedupAccumulator(
+                connection=(
+                    self.transaction_state.connection
+                    if self.transaction_state is not None
+                    else None
+                )
+            )
             text = TextLengthAccumulator(
                 quantiles=self.config.quantiles,
                 candidate_max_lengths=self.config.candidate_max_lengths,
@@ -200,13 +285,20 @@ class DiagnosticsPipeline:
                 frozen_node_indices=frozen_nodes,
             )
             return cal, dedup, text, cov, False
-        data = json.loads(path.read_text(encoding="utf-8"))
+        _checkpoint_payload, data = transaction_snapshot
         if data.get("config_hash") != self.config.config_hash():
             raise ConfigIncompatibleError(
                 "accumulator state config_hash mismatch; use --resume-mode restart"
             )
         cal = CalendarAccumulator.from_state(data["calendar"], boundaries=boundaries)
-        dedup = DedupAccumulator.from_state(data["dedup"])
+        dedup = DedupAccumulator.from_state(
+            data["dedup"],
+            connection=(
+                self.transaction_state.connection
+                if self.transaction_state is not None
+                else None
+            ),
+        )
         text = TextLengthAccumulator.from_state(
             data["text_length"],
             quantiles=self.config.quantiles,
@@ -221,32 +313,30 @@ class DiagnosticsPipeline:
         )
         return cal, dedup, text, cov, True
 
-    def _process_record_stream(
+    def _iter_source_row_chunks(
         self,
         records: Iterable[DiagnosticEventRecord],
-        *,
-        cal: CalendarAccumulator,
-        dedup: DedupAccumulator,
-        text: TextLengthAccumulator,
-        cov: CoverageAccumulator,
-        boundaries,
-    ) -> Tuple[int, int, int]:
-        inspected = accepted = rejected = 0
-        buf: List[DiagnosticEventRecord] = []
-        for rec in records:
-            buf.append(rec)
-            if len(buf) >= self.config.chunk_size:
-                a, rj = self._consume_chunk(buf, cal, dedup, text, cov, boundaries)
-                inspected += len(buf)
-                accepted += a
-                rejected += rj
-                buf = []
-        if buf:
-            a, rj = self._consume_chunk(buf, cal, dedup, text, cov, boundaries)
-            inspected += len(buf)
-            accepted += a
-            rejected += rj
-        return inspected, accepted, rejected
+    ) -> Iterable[Tuple[List[DiagnosticEventRecord], int]]:
+        """Yield bounded chunks without splitting one source workbook row."""
+        chunk: List[DiagnosticEventRecord] = []
+        last_row_number = 1
+        for record in records:
+            row_number = int(record.source_row_number)
+            if row_number < last_row_number:
+                raise ValueError(
+                    "adapter records must be ordered by source_row_number"
+                )
+            if (
+                chunk
+                and len(chunk) >= self.config.chunk_size
+                and row_number != last_row_number
+            ):
+                yield chunk, last_row_number
+                chunk = []
+            chunk.append(record)
+            last_row_number = row_number
+        if chunk:
+            yield chunk, last_row_number
 
     def _consume_chunk(
         self,
@@ -284,8 +374,9 @@ class DiagnosticsPipeline:
         node_universe_size: Optional[int] = None,
         require_complete: bool = True,
         interrupt_after_files: Optional[int] = None,
+        interrupt_after_chunks: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """Process FileSpec list with skip-completed resume (no double-count)."""
+        """Process files with transactional chunk resume and no double counting."""
         assert self.layout is not None and self.checkpoint is not None
         boundaries = self._boundaries()
         cfg_hash = self.config.config_hash()
@@ -294,9 +385,13 @@ class DiagnosticsPipeline:
             frozen_nodes = set(node_lookup.mapping.values())
 
         file_names = [f.file_ref for f in files]
+        transaction_path = (
+            self.checkpoint.root / TransactionalRunState.FILENAME
+        )
 
-        # Reject checksum drift before any sealed short-circuit or skip.
-        if self.config.enable_checkpoint:
+        # A sealed run has no transaction database, so its JSON checkpoint is
+        # authoritative and checksum drift must be rejected before returning.
+        if self.config.enable_checkpoint and not transaction_path.is_file():
             for spec in files:
                 cp = self.checkpoint.files.get(spec.file_ref)
                 if (
@@ -306,12 +401,14 @@ class DiagnosticsPipeline:
                     and cp.source_checksum != spec.checksum
                 ):
                     raise InputChecksumDriftError(
-                        f"source checksum drift for {privacy_safe_file_ref(spec.file_ref)}"
+                        "source checksum drift for "
+                        f"{privacy_safe_file_ref(spec.file_ref)}"
                     )
 
         # Idempotent sealed reload
         if (
             self.config.enable_checkpoint
+            and not transaction_path.is_file()
             and self.checkpoint.is_complete(file_names)
             and self.layout.manifest_path.is_file()
             and all(
@@ -331,8 +428,25 @@ class DiagnosticsPipeline:
             boundaries=boundaries, n_univ=n_univ, frozen_nodes=frozen_nodes
         )
 
+        # Reject checksum drift against the authoritative transaction snapshot.
+        if self.config.enable_checkpoint:
+            for spec in files:
+                cp = self.checkpoint.files.get(spec.file_ref)
+                if (
+                    cp is not None
+                    and cp.source_checksum
+                    and spec.checksum
+                    and cp.source_checksum != spec.checksum
+                ):
+                    raise InputChecksumDriftError(
+                        "source checksum drift for "
+                        f"{privacy_safe_file_ref(spec.file_ref)}"
+                    )
+
         source_meta: List[Dict[str, Any]] = []
         files_processed = 0
+        chunks_processed = 0
+        interrupted = False
         for spec in files:
             source_meta.append(
                 {
@@ -355,9 +469,29 @@ class DiagnosticsPipeline:
                     )
                 continue
 
-            # Stream records for this file
+            cp = self.checkpoint.files.get(spec.file_ref)
+            start_after_source_row = (
+                cp.last_source_row_number
+                if (
+                    self.config.enable_checkpoint
+                    and cp is not None
+                    and self.config.resume_mode == "resume"
+                )
+                else 0
+            )
+            if self.config.enable_checkpoint and cp is None:
+                self.checkpoint.reset_file(
+                    spec.file_ref,
+                    source_checksum=spec.checksum,
+                )
+
+            # Stream only records after the last transactionally committed row.
             if spec.records is not None:
-                record_iter: Iterable[DiagnosticEventRecord] = spec.records
+                record_iter: Iterable[DiagnosticEventRecord] = (
+                    record
+                    for record in spec.records
+                    if int(record.source_row_number) > start_after_source_row
+                )
             elif spec.local_path is not None and node_lookup is not None:
                 adapter = get_adapter(
                     self.config.dataset_a_adapter_id
@@ -368,55 +502,94 @@ class DiagnosticsPipeline:
                     spec.local_path,
                     node_lookup=node_lookup,
                     source_file_name=spec.file_ref,
+                    start_after_source_row=start_after_source_row,
                 )
             else:
                 raise AdapterConfigurationError(
                     f"file {privacy_safe_file_ref(spec.file_ref)} has no records or path"
                 )
 
-            inspected, accepted, rejected = self._process_record_stream(
-                record_iter,
-                cal=cal,
-                dedup=dedup,
-                text=text,
-                cov=cov,
-                boundaries=boundaries,
-            )
+            file_exhausted = True
+            for chunk, last_source_row_number in self._iter_source_row_chunks(
+                record_iter
+            ):
+                self._begin_progress_transaction()
+                try:
+                    accepted, rejected = self._consume_chunk(
+                        chunk,
+                        cal,
+                        dedup,
+                        text,
+                        cov,
+                        boundaries,
+                    )
+                    if self.config.enable_checkpoint:
+                        current = self.checkpoint.files[spec.file_ref]
+                        next_chunk_index = (
+                            max(current.chunks_completed, default=-1) + 1
+                        )
+                        self.checkpoint.mark_chunk(
+                            spec.file_ref,
+                            next_chunk_index,
+                            rows_inspected=len(chunk),
+                            rows_accepted=accepted,
+                            rows_rejected=rejected,
+                            last_source_row_number=last_source_row_number,
+                            source_checksum=spec.checksum,
+                        )
+                        self._commit_progress(cal, dedup, text, cov)
+                    else:
+                        self._rollback_progress_transaction()
+                except Exception:
+                    self._rollback_progress_transaction()
+                    raise
 
-            if self.config.enable_checkpoint:
-                self.checkpoint.reset_file(spec.file_ref, source_checksum=spec.checksum)
-                # Mark as one logical chunk for file-level resume
-                self.checkpoint.mark_chunk(
-                    spec.file_ref,
-                    0,
-                    rows_inspected=inspected,
-                    rows_accepted=accepted,
-                    rows_rejected=rejected,
-                    source_checksum=spec.checksum,
-                )
-                self.checkpoint.mark_file_complete(spec.file_ref)
-                self.checkpoint.save()
-                self._save_accumulators(cal, dedup, text, cov)
+                chunks_processed += 1
+                if (
+                    interrupt_after_chunks is not None
+                    and chunks_processed >= interrupt_after_chunks
+                ):
+                    file_exhausted = False
+                    interrupted = True
+                    break
+
+            if interrupted:
+                break
+
+            if file_exhausted and self.config.enable_checkpoint:
+                self._begin_progress_transaction()
+                try:
+                    self.checkpoint.mark_file_complete(spec.file_ref)
+                    self._commit_progress(cal, dedup, text, cov)
+                except Exception:
+                    self._rollback_progress_transaction()
+                    raise
 
             files_processed += 1
             if interrupt_after_files is not None and files_processed >= interrupt_after_files:
+                interrupted = True
                 break
 
         complete = (
             self.checkpoint.is_complete(file_names)
             if self.config.enable_checkpoint
-            else (interrupt_after_files is None)
+            else not interrupted
         )
         # When enable_checkpoint False, complete if all files visited
         if not self.config.enable_checkpoint:
-            complete = interrupt_after_files is None or files_processed >= len(files)
+            complete = not interrupted
 
         if require_complete and not complete:
+            if self.transaction_state is not None:
+                self.transaction_state.close()
+                self.transaction_state = None
+            else:
+                dedup.close()
             raise IncompleteRunError(
                 "diagnostics run incomplete; resume required before sealing reports"
             )
 
-        return self._seal_and_persist(
+        result = self._seal_and_persist(
             cal=cal,
             dedup=dedup,
             text=text,
@@ -426,6 +599,12 @@ class DiagnosticsPipeline:
             source_meta=source_meta,
             complete=complete,
         )
+        if self.transaction_state is not None:
+            self.transaction_state.remove()
+            self.transaction_state = None
+        else:
+            dedup.close()
+        return result
 
     def run_on_records(
         self,
@@ -433,6 +612,7 @@ class DiagnosticsPipeline:
         *,
         require_complete: bool = True,
         interrupt_after_files: Optional[int] = None,
+        interrupt_after_chunks: Optional[int] = None,
         node_universe_size: Optional[int] = None,
         frozen_nodes: Optional[set] = None,
     ) -> Dict[str, Any]:
@@ -448,6 +628,7 @@ class DiagnosticsPipeline:
             node_universe_size=node_universe_size,
             require_complete=require_complete,
             interrupt_after_files=interrupt_after_files,
+            interrupt_after_chunks=interrupt_after_chunks,
         )
 
     def _load_sealed_result(self) -> Dict[str, Any]:
@@ -636,30 +817,21 @@ class DiagnosticsPipeline:
                 source_format="synthetic",
             )
             self.config = cfg
+            checkpoint_root = self.checkpoint.root  # type: ignore[union-attr]
             self.checkpoint = DiagnosticsCheckpointStore(
-                root=self.layout.checkpoint_dir,  # type: ignore[union-attr]
+                root=checkpoint_root,
                 config_hash=cfg.config_hash(),
             )
-            # Drop incompatible leftover state from a prior provisional config.
-            state_path = self._accumulator_state_path()
-            if state_path.is_file():
-                try:
-                    prev = json.loads(state_path.read_text(encoding="utf-8"))
-                    if prev.get("config_hash") != cfg.config_hash():
-                        state_path.unlink()
-                except Exception:
-                    state_path.unlink()
             if cfg.resume_mode == "restart":
                 self._restart_run_state()
-            elif cfg.enable_checkpoint and self.checkpoint.path.is_file():
-                try:
-                    self.checkpoint.load()
-                except ConfigIncompatibleError:
-                    self.checkpoint.files = {}
-                    if self.checkpoint.path.is_file():
-                        self.checkpoint.path.unlink()
-                    if state_path.is_file():
-                        state_path.unlink()
+            elif (
+                cfg.enable_checkpoint
+                and self.checkpoint.path.is_file()
+                and not (
+                    self.checkpoint.root / TransactionalRunState.FILENAME
+                ).is_file()
+            ):
+                self.checkpoint.load()
         self.real_data_executed = False
         self.real_data_status_message = (
             "Real data was not accessible or not authorized in this environment; "
@@ -768,13 +940,28 @@ def run_diagnostics(
 ) -> Dict[str, Any]:
     """Colab/controlled-environment entry point."""
     cfg = config or load_diagnostics_config(config_path)
-    pipe = DiagnosticsPipeline(
-        config=cfg,
-        output_root=Path(output_root),
-        run_id=run_id,
-        checkpoint_root=Path(checkpoint_root) if checkpoint_root else None,
-    )
     if mode == "synthetic":
+        if (
+            cfg.provisional_start_label == "2017-Q4"
+            and cfg.provisional_end_label == "2026-Q2"
+        ):
+            cfg = replace(
+                cfg,
+                provisional_start_label=SYN_START,
+                provisional_end_label=SYN_END,
+                node_universe_size=len(SYN_NODE_UNIVERSE),
+                dataset_a_source_scheme="synthetic",
+                dataset_b_source_scheme="synthetic",
+                source_format="synthetic",
+            )
+        pipe = DiagnosticsPipeline(
+            config=cfg,
+            output_root=Path(output_root),
+            run_id=run_id,
+            checkpoint_root=(
+                Path(checkpoint_root) if checkpoint_root else None
+            ),
+        )
         return pipe.run_synthetic()
     if mode == "real":
         a_paths: List[Path] = []
@@ -809,21 +996,20 @@ def run_diagnostics(
         scheme_b = "local" if dataset_b_files else (
             str(dataset_b_source).split(":", 1)[0] if dataset_b_source else "unset"
         )
-        pipe.config = replace(
-            pipe.config,
+        cfg = replace(
+            cfg,
             dataset_a_source_scheme=scheme_a,
             dataset_b_source_scheme=scheme_b,
             source_format="xlsx",
         )
-        # Rebuild checkpoint hash alignment after scheme update
-        pipe.checkpoint = DiagnosticsCheckpointStore(
-            root=pipe.layout.checkpoint_dir,  # type: ignore[union-attr]
-            config_hash=pipe.config.config_hash(),
+        pipe = DiagnosticsPipeline(
+            config=cfg,
+            output_root=Path(output_root),
+            run_id=run_id,
+            checkpoint_root=(
+                Path(checkpoint_root) if checkpoint_root else None
+            ),
         )
-        if pipe.config.resume_mode == "restart":
-            pipe._restart_run_state()
-        elif pipe.config.enable_checkpoint and pipe.checkpoint.path.is_file():
-            pipe.checkpoint.load()
         return pipe.run_real(
             dataset_a_paths=a_paths,
             dataset_b_paths=b_paths,

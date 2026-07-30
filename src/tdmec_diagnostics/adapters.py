@@ -166,11 +166,16 @@ def iter_dataset_b_records(
     *,
     node_lookup: NodeUniverseLookup,
     source_file_name: Optional[str] = None,
+    start_after_source_row: int = 1,
 ) -> Iterator[DiagnosticEventRecord]:
     """Stream Dataset B rows → DiagnosticEventRecord (node-text diagnostics)."""
     path = Path(path)
     file_name = source_file_name or path.name
-    sheet, header, rows = iter_xlsx_rows(path, expected_sheet=DATASET_B_SHEET_NAME)
+    sheet, header, rows = iter_xlsx_rows(
+        path,
+        expected_sheet=DATASET_B_SHEET_NAME,
+        start_after_row_number=start_after_source_row,
+    )
     if sheet != DATASET_B_SHEET_NAME:
         raise UnsupportedSchemaError(
             f"adapter={DATASET_B_ADAPTER_ID} expected sheet {DATASET_B_SHEET_NAME!r}, "
@@ -180,7 +185,10 @@ def iter_dataset_b_records(
         header, DATASET_B_REQUIRED_COLUMNS, adapter_id=DATASET_B_ADAPTER_ID
     )
 
-    for row_number, row in enumerate(rows, start=2):  # header is row 1
+    for row_number, row in enumerate(
+        rows,
+        start=max(2, int(start_after_source_row) + 1),
+    ):
         cells = _row_dict(col, row)
         tid = normalize_tweet_id(cells.get("id"))
         user = parse_user_blob(cells.get("user"))
@@ -230,6 +238,7 @@ def iter_dataset_a_records(
     *,
     node_lookup: NodeUniverseLookup,
     source_file_name: Optional[str] = None,
+    start_after_source_row: int = 1,
 ) -> Iterator[DiagnosticEventRecord]:
     """Stream Dataset A rows → edge-event DiagnosticEventRecord rows.
 
@@ -239,7 +248,11 @@ def iter_dataset_a_records(
     """
     path = Path(path)
     file_name = source_file_name or path.name
-    sheet, header, rows = iter_xlsx_rows(path, expected_sheet=DATASET_A_SHEET_NAME)
+    sheet, header, rows = iter_xlsx_rows(
+        path,
+        expected_sheet=DATASET_A_SHEET_NAME,
+        start_after_row_number=start_after_source_row,
+    )
     if sheet != DATASET_A_SHEET_NAME:
         raise UnsupportedSchemaError(
             f"adapter={DATASET_A_ADAPTER_ID} expected sheet {DATASET_A_SHEET_NAME!r}, "
@@ -252,7 +265,10 @@ def iter_dataset_a_records(
         allow_extra=True,
     )
 
-    for row_number, row in enumerate(rows, start=2):
+    for row_number, row in enumerate(
+        rows,
+        start=max(2, int(start_after_source_row) + 1),
+    ):
         cells = _row_dict(col, row)
         user = parse_user_blob(cells.get("user"))
         author_id = user.account_id if user.ok else None

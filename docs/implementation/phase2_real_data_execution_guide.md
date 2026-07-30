@@ -68,6 +68,14 @@ Under `artifacts/diagnostics/<run_id>/`:
 - `execution_manifest.json`
 - `checkpoints/` — file progress + accumulator state
 
+While an unsealed run is active, the checkpoint root also contains a private
+SQLite transaction file. It stores privacy-safe hashed dedup occurrence
+provenance and the authoritative matching checkpoint/accumulator snapshot.
+It is removed only after successful report sealing, so a completed run retains
+the documented final artifact set. Resume verifies the scientific
+configuration hash and input checksums, skips transactionally committed source
+rows, and fails closed on incompatible legacy partial state.
+
 Statuses: `UNVALIDATED` | `DIAGNOSTIC_COMPLETE` | `REVIEW_REQUIRED` only.
 
 ## Evidence review

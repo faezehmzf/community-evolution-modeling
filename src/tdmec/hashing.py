@@ -124,6 +124,28 @@ def hash_canonical(obj: Any) -> str:
     return sha256_hex(canonical_json_bytes(obj))
 
 
+def hash_canonical_json_native(obj: Any) -> str:
+    """Stream-hash an already JSON-native value in canonical form.
+
+    Unlike :func:`hash_canonical`, this helper deliberately does not construct
+    a recursively canonicalized copy or one complete encoded byte string.
+    It is for large report mappings that already contain only JSON-native
+    values. The resulting digest is identical to ``hash_canonical`` for that
+    domain.
+    """
+    _require_sha256()
+    encoder = json.JSONEncoder(
+        sort_keys=True,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    digest = hashlib.sha256()
+    for piece in encoder.iterencode(obj):
+        digest.update(piece.encode("utf-8"))
+    return digest.hexdigest()
+
+
 def hash_config(config_dict: Mapping[str, Any]) -> str:
     """Deterministic configuration hash (path-independent scientific content)."""
     return hash_canonical(dict(config_dict))

@@ -38,6 +38,7 @@ def iter_xlsx_rows(
     path: str | Path,
     *,
     expected_sheet: str | None = None,
+    start_after_row_number: int = 1,
 ) -> Tuple[str, List[str], Iterator[Tuple]]:
     """Stream workbook rows without modifying the source file.
 
@@ -64,12 +65,21 @@ def iter_xlsx_rows(
             else:
                 sheet_name = wb.sheetnames[0]
                 ws = wb[sheet_name]
-            rows = ws.iter_rows(values_only=True)
-            header_raw = next(rows)
+            header_rows = ws.iter_rows(
+                min_row=1,
+                max_row=1,
+                values_only=True,
+            )
+            header_raw = next(header_rows)
             header = [
                 str(h) if h is not None else f"__col{i}"
                 for i, h in enumerate(header_raw)
             ]
+            first_data_row = max(2, int(start_after_row_number) + 1)
+            rows = ws.iter_rows(
+                min_row=first_data_row,
+                values_only=True,
+            )
 
             def _gen() -> Iterator[Tuple]:
                 try:
@@ -107,8 +117,10 @@ def iter_xlsx_rows(
         raise UnsupportedSchemaError(f"empty workbook sheet in {path.name}")
     header = [str(h) if h is not None else f"__col{i}" for i, h in enumerate(data[0])]
 
+    first_data_index = max(1, int(start_after_row_number))
+
     def _gen2() -> Iterator[Tuple]:
-        for row in data[1:]:
+        for row in data[first_data_index:]:
             yield tuple(row)
 
     return sheet_name, header, _gen2()

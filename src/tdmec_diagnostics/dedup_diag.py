@@ -1,13 +1,18 @@
-"""Privacy-safe deduplication diagnostics (QDEDUP-B01 evidence only).
+"""Privacy-safe, bounded-memory deduplication diagnostics.
 
-Does not mutate source data. Does not finalize the Dataset A signature or L2
-thresholds. Does not implement aggressive fuzzy deduplication.
+Exact candidate grouping is retained on disk in SQLite.  Only aggregate
+counters whose cardinality is bounded by files, snapshots, or the frozen node
+universe remain in Python memory.  Source data is never mutated and raw
+identifiers or text are never written to the grouping store.
 """
 from __future__ import annotations
 
 import hashlib
+import sqlite3
+import tempfile
 from collections import Counter, defaultdict
-from dataclasses import dataclass, field
+from dataclasses import InitVar, dataclass, field
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 from tdmec_diagnostics import constants as DC
@@ -16,15 +21,21 @@ from tdmec_diagnostics.records import DiagnosticEventRecord
 from tdmec_diagnostics.status import assert_not_certified
 
 
+_GROUP_TWEET_ID = "tweet_id"
+_GROUP_COMPOSITE = "composite"
+_GROUP_FULL_ROW = "full_row"
+_GROUP_USER_TIMESTAMP = "user_timestamp"
+
+
 def _sha16(fields: Tuple[Any, ...]) -> str:
     h = hashlib.sha256()
-    for f in fields:
-        h.update(repr(f).encode("utf-8"))
+    for value in fields:
+        h.update(repr(value).encode("utf-8"))
         h.update(b"\x1f")
     return h.hexdigest()[:16]
 
 
-@dataclass
+@dataclass(frozen=True)
 class _Occurrence:
     source_file: str
     source_row_number: int
@@ -34,36 +45,134 @@ class _Occurrence:
 
 @dataclass
 class DedupAccumulator:
-    """Streaming accumulator for exact-duplicate candidate diagnostics."""
+    """Exact deduplication accumulator with disk-backed occurrence grouping."""
+
+    connection: InitVar[Optional[sqlite3.Connection]] = None
+    database_path: Optional[Path] = field(default=None, repr=False)
 
     rows_inspected: int = 0
     rows_accepted: int = 0
     rows_rejected: int = 0
 
-    # Grouping maps: key -> occurrences
-    by_tweet_id: Dict[str, List[_Occurrence]] = field(default_factory=dict)
-    by_composite: Dict[str, List[_Occurrence]] = field(default_factory=dict)
-    by_full_row: Dict[str, List[_Occurrence]] = field(default_factory=dict)
-    # Dataset A discordant/concordant analysis key: user + timestamp only
-    by_user_timestamp: Dict[str, List[_Occurrence]] = field(default_factory=dict)
-
     null_key_counts: Counter = field(default_factory=Counter)
     multiplicity_tweet: Counter = field(default_factory=Counter)
     multiplicity_composite: Counter = field(default_factory=Counter)
-
     effects_by_file: Dict[str, Counter] = field(
         default_factory=lambda: defaultdict(Counter)
     )
     effects_by_snapshot: Dict[str, Counter] = field(
         default_factory=lambda: defaultdict(Counter)
     )
-    # Privacy-safe aggregate: hashed user -> occurrence count only
-    user_occurrence_counts: Counter = field(default_factory=Counter)
-
     files_seen: Set[str] = field(default_factory=set)
     snapshot_labels_seen: Set[str] = field(default_factory=set)
 
-    # Optional snapshot label provided by caller via record.extra["quarter_label"]
+    _connection: sqlite3.Connection = field(init=False, repr=False)
+    _temporary_directory: Optional[tempfile.TemporaryDirectory] = field(
+        default=None, init=False, repr=False
+    )
+    _owns_connection: bool = field(default=False, init=False, repr=False)
+
+    def __post_init__(self, connection: Optional[sqlite3.Connection]) -> None:
+        if connection is None:
+            if self.database_path is None:
+                self._temporary_directory = tempfile.TemporaryDirectory(
+                    prefix="tdmec-dedup-"
+                )
+                self.database_path = (
+                    Path(self._temporary_directory.name) / "dedup.sqlite"
+                )
+            self.database_path = Path(self.database_path)
+            self.database_path.parent.mkdir(parents=True, exist_ok=True)
+            connection = sqlite3.connect(str(self.database_path))
+            self._owns_connection = True
+        self._connection = connection
+        self._connection.execute("PRAGMA temp_store = FILE")
+        self._connection.execute("PRAGMA cache_size = -8192")
+        self._initialize_schema()
+
+    def _initialize_schema(self) -> None:
+        self._connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS dedup_occurrences (
+                occurrence_id INTEGER PRIMARY KEY,
+                group_kind TEXT NOT NULL,
+                group_key TEXT NOT NULL,
+                source_file TEXT NOT NULL,
+                source_row_number INTEGER NOT NULL,
+                content_hash TEXT NOT NULL,
+                dataset TEXT NOT NULL
+            )
+            """
+        )
+        self._connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_dedup_group
+            ON dedup_occurrences(group_kind, group_key)
+            """
+        )
+        self._connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS dedup_user_counts (
+                user_hash TEXT PRIMARY KEY,
+                occurrence_count INTEGER NOT NULL
+            )
+            """
+        )
+
+    @property
+    def retained_occurrences_in_memory(self) -> int:
+        """Number of per-occurrence objects retained by Python."""
+        return 0
+
+    @property
+    def disk_occurrence_rows(self) -> int:
+        row = self._connection.execute(
+            "SELECT COUNT(*) FROM dedup_occurrences"
+        ).fetchone()
+        return int(row[0])
+
+    def close(self) -> None:
+        if self._owns_connection:
+            self._connection.commit()
+            self._connection.close()
+            self._owns_connection = False
+        if self._temporary_directory is not None:
+            self._temporary_directory.cleanup()
+            self._temporary_directory = None
+
+    def __del__(self) -> None:
+        try:
+            self.close()
+        except Exception:
+            pass
+
+    def _store_occurrence(
+        self,
+        group_kind: str,
+        group_key: str,
+        occurrence: _Occurrence,
+    ) -> None:
+        self._connection.execute(
+            """
+            INSERT INTO dedup_occurrences(
+                group_kind,
+                group_key,
+                source_file,
+                source_row_number,
+                content_hash,
+                dataset
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                group_kind,
+                group_key,
+                occurrence.source_file,
+                int(occurrence.source_row_number),
+                occurrence.content_hash,
+                occurrence.dataset,
+            ),
+        )
+
     def observe(
         self,
         record: DiagnosticEventRecord,
@@ -76,62 +185,78 @@ class DedupAccumulator:
         qlabel = quarter_label or str(record.extra.get("quarter_label") or "unknown")
         self.snapshot_labels_seen.add(qlabel)
 
-        # User aggregate (hashed only)
         if record.external_user_id:
-            self.user_occurrence_counts[
-                hash_identifier(record.external_user_id, prefix="user")
-            ] += 1
+            user_hash = hash_identifier(record.external_user_id, prefix="user")
+            self._connection.execute(
+                """
+                INSERT INTO dedup_user_counts(user_hash, occurrence_count)
+                VALUES (?, 1)
+                ON CONFLICT(user_hash) DO UPDATE
+                SET occurrence_count = occurrence_count + 1
+                """,
+                (user_hash,),
+            )
 
-        # Null / malformed candidate keys
         if record.dataset.upper() == "B":
             if not record.tweet_id:
                 self.null_key_counts[DC.DEDUP_NULL_KEY] += 1
                 self.rows_rejected += 1
                 self.effects_by_file[file_ref]["null_key"] += 1
                 return
-            # Reject float-like scientific notation tweet ids as malformed
-            tid = str(record.tweet_id)
-            if "e+" in tid.lower() or "." in tid:
+            tweet_id = str(record.tweet_id)
+            if "e+" in tweet_id.lower() or "." in tweet_id:
                 self.null_key_counts[DC.DEDUP_NULL_KEY] += 1
                 self.rows_rejected += 1
                 self.effects_by_file[file_ref]["malformed_tweet_id"] += 1
                 return
-        else:
-            # Dataset A: composite fields; float tweet id must not be the exact key
-            if not record.external_user_id or record.timestamp_raw in (None, ""):
-                self.null_key_counts[DC.DEDUP_NULL_KEY] += 1
-                self.rows_rejected += 1
-                self.effects_by_file[file_ref]["null_key"] += 1
-                return
+        elif (
+            not record.external_user_id
+            or record.timestamp_raw in (None, "")
+        ):
+            self.null_key_counts[DC.DEDUP_NULL_KEY] += 1
+            self.rows_rejected += 1
+            self.effects_by_file[file_ref]["null_key"] += 1
+            return
 
         self.rows_accepted += 1
-        content_h = _sha16(record.content_fingerprint_fields())
-        occ = _Occurrence(
+        occurrence = _Occurrence(
             source_file=file_ref,
             source_row_number=record.source_row_number,
-            content_hash=content_h,
+            content_hash=_sha16(record.content_fingerprint_fields()),
             dataset=record.dataset.upper(),
         )
 
-        # Full-row exact duplicates
-        fr = _sha16(record.full_row_fingerprint_fields())
-        self.by_full_row.setdefault(fr, []).append(occ)
-
+        self._store_occurrence(
+            _GROUP_FULL_ROW,
+            _sha16(record.full_row_fingerprint_fields()),
+            occurrence,
+        )
         if record.dataset.upper() == "B" and record.tweet_id:
-            # Store under hashed tweet id only in the accumulator key space
-            key = hash_identifier(record.tweet_id, prefix="tid")
-            self.by_tweet_id.setdefault(key, []).append(occ)
-        else:
-            key = _sha16(record.composite_key_fields())
-            self.by_composite.setdefault(key, []).append(occ)
-            # Concordant vs discordant for A: group by user + timestamp only
-            ut_key = _sha16(
-                (
-                    record.external_user_id or "",
-                    "" if record.timestamp_raw is None else str(record.timestamp_raw),
-                )
+            self._store_occurrence(
+                _GROUP_TWEET_ID,
+                hash_identifier(record.tweet_id, prefix="tid"),
+                occurrence,
             )
-            self.by_user_timestamp.setdefault(ut_key, []).append(occ)
+        else:
+            self._store_occurrence(
+                _GROUP_COMPOSITE,
+                _sha16(record.composite_key_fields()),
+                occurrence,
+            )
+            self._store_occurrence(
+                _GROUP_USER_TIMESTAMP,
+                _sha16(
+                    (
+                        record.external_user_id or "",
+                        (
+                            ""
+                            if record.timestamp_raw is None
+                            else str(record.timestamp_raw)
+                        ),
+                    )
+                ),
+                occurrence,
+            )
 
         self.effects_by_file[file_ref]["accepted"] += 1
         self.effects_by_snapshot[qlabel]["accepted"] += 1
@@ -142,169 +267,172 @@ class DedupAccumulator:
         *,
         quarter_label: Optional[str] = None,
     ) -> None:
-        for r in records:
-            self.observe(r, quarter_label=quarter_label)
-
-    @staticmethod
-    def _occ_to_dict(occ: _Occurrence) -> Dict[str, Any]:
-        return {
-            "source_file": occ.source_file,
-            "source_row_number": int(occ.source_row_number),
-            "content_hash": occ.content_hash,
-            "dataset": occ.dataset,
-        }
-
-    @staticmethod
-    def _occ_from_dict(d: Dict[str, Any]) -> _Occurrence:
-        return _Occurrence(
-            source_file=str(d["source_file"]),
-            source_row_number=int(d["source_row_number"]),
-            content_hash=str(d["content_hash"]),
-            dataset=str(d["dataset"]),
-        )
-
-    @staticmethod
-    def _groups_to_state(
-        groups: Dict[str, List[_Occurrence]],
-    ) -> Dict[str, List[Dict[str, Any]]]:
-        return {
-            key: [DedupAccumulator._occ_to_dict(o) for o in occs]
-            for key, occs in sorted(groups.items())
-        }
-
-    @staticmethod
-    def _groups_from_state(
-        data: Optional[Dict[str, List[Dict[str, Any]]]],
-    ) -> Dict[str, List[_Occurrence]]:
-        out: Dict[str, List[_Occurrence]] = {}
-        for key, occs in (data or {}).items():
-            out[str(key)] = [DedupAccumulator._occ_from_dict(o) for o in occs]
-        return out
+        for record in records:
+            self.observe(record, quarter_label=quarter_label)
 
     def to_state(self) -> Dict[str, Any]:
-        """Privacy-safe serializable state (hashed keys, counts, file refs only)."""
+        """Return bounded, privacy-safe aggregate state.
+
+        Per-occurrence grouping rows remain in the transactional SQLite store
+        and are deliberately absent from this JSON representation.
+        """
         return {
+            "state_version": 2,
+            "group_storage": "transactional_sqlite",
             "rows_inspected": self.rows_inspected,
             "rows_accepted": self.rows_accepted,
             "rows_rejected": self.rows_rejected,
-            "by_tweet_id": self._groups_to_state(self.by_tweet_id),
-            "by_composite": self._groups_to_state(self.by_composite),
-            "by_full_row": self._groups_to_state(self.by_full_row),
-            "by_user_timestamp": self._groups_to_state(self.by_user_timestamp),
             "null_key_counts": {
-                k: int(self.null_key_counts[k]) for k in sorted(self.null_key_counts)
+                key: int(self.null_key_counts[key])
+                for key in sorted(self.null_key_counts)
             },
             "multiplicity_tweet": {
-                str(k): int(v) for k, v in sorted(self.multiplicity_tweet.items())
+                str(key): int(value)
+                for key, value in sorted(self.multiplicity_tweet.items())
             },
             "multiplicity_composite": {
-                str(k): int(v)
-                for k, v in sorted(self.multiplicity_composite.items())
+                str(key): int(value)
+                for key, value in sorted(self.multiplicity_composite.items())
             },
             "effects_by_file": {
-                f: dict(sorted(ctr.items()))
-                for f, ctr in sorted(self.effects_by_file.items())
+                file_ref: dict(sorted(counter.items()))
+                for file_ref, counter in sorted(self.effects_by_file.items())
             },
             "effects_by_snapshot": {
-                s: dict(sorted(ctr.items()))
-                for s, ctr in sorted(self.effects_by_snapshot.items())
-            },
-            "user_occurrence_counts": {
-                k: int(self.user_occurrence_counts[k])
-                for k in sorted(self.user_occurrence_counts)
+                snapshot: dict(sorted(counter.items()))
+                for snapshot, counter in sorted(self.effects_by_snapshot.items())
             },
             "files_seen": sorted(self.files_seen),
             "snapshot_labels_seen": sorted(self.snapshot_labels_seen),
         }
 
     @classmethod
-    def from_state(cls, state: Dict[str, Any]) -> "DedupAccumulator":
-        """Reconstruct an equivalent accumulator for continued observation."""
-        acc = cls()
+    def from_state(
+        cls,
+        state: Dict[str, Any],
+        *,
+        connection: Optional[sqlite3.Connection] = None,
+    ) -> "DedupAccumulator":
+        acc = cls(connection=connection)
         acc.rows_inspected = int(state.get("rows_inspected", 0))
         acc.rows_accepted = int(state.get("rows_accepted", 0))
         acc.rows_rejected = int(state.get("rows_rejected", 0))
-        acc.by_tweet_id = cls._groups_from_state(state.get("by_tweet_id"))
-        acc.by_composite = cls._groups_from_state(state.get("by_composite"))
-        acc.by_full_row = cls._groups_from_state(state.get("by_full_row"))
-        acc.by_user_timestamp = cls._groups_from_state(state.get("by_user_timestamp"))
-        for k, v in (state.get("null_key_counts") or {}).items():
-            acc.null_key_counts[k] = int(v)
-        for k, v in (state.get("multiplicity_tweet") or {}).items():
-            acc.multiplicity_tweet[int(k)] = int(v)
-        for k, v in (state.get("multiplicity_composite") or {}).items():
-            acc.multiplicity_composite[int(k)] = int(v)
-        for f, ctr in (state.get("effects_by_file") or {}).items():
-            acc.effects_by_file[f].update({kk: int(vv) for kk, vv in ctr.items()})
-        for s, ctr in (state.get("effects_by_snapshot") or {}).items():
-            acc.effects_by_snapshot[s].update({kk: int(vv) for kk, vv in ctr.items()})
-        for k, v in (state.get("user_occurrence_counts") or {}).items():
-            acc.user_occurrence_counts[k] = int(v)
+        for key, value in (state.get("null_key_counts") or {}).items():
+            acc.null_key_counts[key] = int(value)
+        for key, value in (state.get("multiplicity_tweet") or {}).items():
+            acc.multiplicity_tweet[int(key)] = int(value)
+        for key, value in (state.get("multiplicity_composite") or {}).items():
+            acc.multiplicity_composite[int(key)] = int(value)
+        for file_ref, counter in (state.get("effects_by_file") or {}).items():
+            acc.effects_by_file[file_ref].update(
+                {key: int(value) for key, value in counter.items()}
+            )
+        for snapshot, counter in (
+            state.get("effects_by_snapshot") or {}
+        ).items():
+            acc.effects_by_snapshot[snapshot].update(
+                {key: int(value) for key, value in counter.items()}
+            )
         acc.files_seen = set(state.get("files_seen") or [])
         acc.snapshot_labels_seen = set(state.get("snapshot_labels_seen") or [])
         return acc
 
-    def _classify_groups(
-        self, groups: Dict[str, List[_Occurrence]]
-    ) -> Dict[str, Any]:
+    def _classify_groups(self, group_kind: str) -> Dict[str, Any]:
         exact_concordant = 0
         discordant = 0
         cross_file = 0
         within_file = 0
         conflicting_metadata = 0
         extra_rows = 0
+        rows_before = 0
+        groups_total = 0
         multiplicity: Counter = Counter()
-
         evidence_rows: List[Dict[str, Any]] = []
-        for key, occs in groups.items():
-            multiplicity[len(occs)] += 1
-            if len(occs) < 2:
+
+        query = """
+            WITH group_stats AS (
+                SELECT
+                    group_key,
+                    COUNT(*) AS occurrence_count,
+                    COUNT(DISTINCT content_hash) AS distinct_content_hashes,
+                    COUNT(DISTINCT source_file) AS distinct_files
+                FROM dedup_occurrences
+                WHERE group_kind = ?
+                GROUP BY group_key
+            ),
+            canonical AS (
+                SELECT
+                    group_key,
+                    source_file,
+                    source_row_number,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY group_key
+                        ORDER BY source_file, source_row_number
+                    ) AS row_rank
+                FROM dedup_occurrences
+                WHERE group_kind = ?
+            )
+            SELECT
+                s.group_key,
+                s.occurrence_count,
+                s.distinct_content_hashes,
+                s.distinct_files,
+                c.source_file,
+                c.source_row_number
+            FROM group_stats AS s
+            JOIN canonical AS c
+              ON c.group_key = s.group_key AND c.row_rank = 1
+            ORDER BY s.group_key
+        """
+        for row in self._connection.execute(query, (group_kind, group_kind)):
+            (
+                group_key,
+                occurrence_count,
+                distinct_content_hashes,
+                distinct_files,
+                canonical_file,
+                canonical_row,
+            ) = row
+            occurrence_count = int(occurrence_count)
+            distinct_content_hashes = int(distinct_content_hashes)
+            distinct_files = int(distinct_files)
+            groups_total += 1
+            rows_before += occurrence_count
+            multiplicity[occurrence_count] += 1
+            if occurrence_count < 2:
                 continue
-            extra_rows += len(occs) - 1
-            hashes = {o.content_hash for o in occs}
-            files = {o.source_file for o in occs}
-            concordant = len(hashes) == 1
-            if concordant:
+
+            extra_rows += occurrence_count - 1
+            if distinct_content_hashes == 1:
                 exact_concordant += 1
-                dtype = DC.DEDUP_SAME_ID_CONCORDANT
+                duplicate_type = DC.DEDUP_SAME_ID_CONCORDANT
             else:
                 discordant += 1
                 conflicting_metadata += 1
-                dtype = DC.DEDUP_SAME_ID_DISCORDANT
-            if len(files) > 1:
+                duplicate_type = DC.DEDUP_SAME_ID_DISCORDANT
+            if distinct_files > 1:
                 cross_file += 1
                 scope = DC.DEDUP_CROSS_FILE
             else:
                 within_file += 1
                 scope = DC.DEDUP_WITHIN_FILE
 
-            canon = min(occs, key=lambda o: (o.source_file, o.source_row_number))
             evidence_rows.append(
                 {
-                    "group_key_hash": key,
-                    "duplicate_type": dtype,
+                    "group_key_hash": str(group_key),
+                    "duplicate_type": duplicate_type,
                     "scope": scope,
-                    "occurrence_count": len(occs),
-                    "distinct_content_hashes": len(hashes),
-                    "distinct_files": len(files),
-                    "canonical_source_file_ref": canon.source_file,
-                    "canonical_source_row_number": canon.source_row_number,
-                    # Privacy-safe location refs only (file refs already basenames)
-                    "source_location_count": len(occs),
+                    "occurrence_count": occurrence_count,
+                    "distinct_content_hashes": distinct_content_hashes,
+                    "distinct_files": distinct_files,
+                    "canonical_source_file_ref": str(canonical_file),
+                    "canonical_source_row_number": int(canonical_row),
+                    "source_location_count": occurrence_count,
                 }
             )
 
-        evidence_rows.sort(
-            key=lambda r: (
-                r["group_key_hash"],
-                r["canonical_source_file_ref"],
-                r["canonical_source_row_number"],
-            )
-        )
-        before = sum(len(v) for v in groups.values())
-        after_exact_collapse = sum(1 for v in groups.values() if v)  # one per key
         return {
-            "groups_total": len(groups),
+            "groups_total": groups_total,
             "duplicate_groups": exact_concordant + discordant,
             "concordant_groups": exact_concordant,
             "discordant_groups": discordant,
@@ -312,10 +440,10 @@ class DedupAccumulator:
             "within_file_duplicate_groups": within_file,
             "conflicting_metadata_groups": conflicting_metadata,
             "extra_duplicate_rows": extra_rows,
-            "rows_before_candidate_exact_collapse": before,
-            "rows_after_candidate_exact_collapse": after_exact_collapse,
+            "rows_before_candidate_exact_collapse": rows_before,
+            "rows_after_candidate_exact_collapse": groups_total,
             "multiplicity_distribution": {
-                str(k): int(multiplicity[k]) for k in sorted(multiplicity)
+                str(key): int(multiplicity[key]) for key in sorted(multiplicity)
             },
             "evidence_table": evidence_rows,
         }
@@ -327,15 +455,19 @@ class DedupAccumulator:
         status: str = DC.DIAGNOSTIC_COMPLETE,
     ) -> Dict[str, Any]:
         assert_not_certified(status)
-        tweet_stats = self._classify_groups(self.by_tweet_id)
-        composite_stats = self._classify_groups(self.by_composite)
-        user_ts_stats = self._classify_groups(self.by_user_timestamp)
-        full_row_stats = self._classify_groups(self.by_full_row)
+        tweet_stats = self._classify_groups(_GROUP_TWEET_ID)
+        composite_stats = self._classify_groups(_GROUP_COMPOSITE)
+        user_ts_stats = self._classify_groups(_GROUP_USER_TIMESTAMP)
+        full_row_stats = self._classify_groups(_GROUP_FULL_ROW)
 
-        # Privacy-safe user multiplicity (counts only; no raw IDs)
-        user_mult = Counter(self.user_occurrence_counts.values())
+        user_multiplicity = Counter(
+            int(row[0])
+            for row in self._connection.execute(
+                "SELECT occurrence_count FROM dedup_user_counts"
+            )
+        )
 
-        report = {
+        return {
             "schema_version": DC.DIAGNOSTIC_SCHEMA_VERSION,
             "report_type": DC.REPORT_DEDUP,
             "status": status,
@@ -344,22 +476,26 @@ class DedupAccumulator:
             "rows_accepted_for_diagnostics": self.rows_accepted,
             "rows_rejected": self.rows_rejected,
             "null_or_malformed_key_counts": {
-                k: int(self.null_key_counts[k]) for k in sorted(self.null_key_counts)
+                key: int(self.null_key_counts[key])
+                for key in sorted(self.null_key_counts)
             },
             "dataset_b_same_id": tweet_stats,
             "dataset_a_candidate_composite": composite_stats,
             "dataset_a_same_user_timestamp": user_ts_stats,
             "exact_full_row": full_row_stats,
             "effects_by_file": {
-                f: dict(sorted(self.effects_by_file[f].items()))
-                for f in sorted(self.effects_by_file)
+                file_ref: dict(sorted(self.effects_by_file[file_ref].items()))
+                for file_ref in sorted(self.effects_by_file)
             },
             "effects_by_snapshot": {
-                s: dict(sorted(self.effects_by_snapshot[s].items()))
-                for s in sorted(self.effects_by_snapshot)
+                snapshot: dict(
+                    sorted(self.effects_by_snapshot[snapshot].items())
+                )
+                for snapshot in sorted(self.effects_by_snapshot)
             },
             "user_occurrence_multiplicity_distribution": {
-                str(k): int(user_mult[k]) for k in sorted(user_mult)
+                str(key): int(user_multiplicity[key])
+                for key in sorted(user_multiplicity)
             },
             "candidate_signatures": {
                 "dataset_b": "exact_string_tweet_id + content_hash",
@@ -388,25 +524,26 @@ class DedupAccumulator:
                 "records are reported, not removed. No CERTIFIED claim."
             ),
         }
-        return report
 
 
 def human_dedup_summary(report: Dict[str, Any]) -> str:
-    b = report.get("dataset_b_same_id", {})
-    a = report.get("dataset_a_candidate_composite", {})
-    ut = report.get("dataset_a_same_user_timestamp", {})
+    dataset_b = report.get("dataset_b_same_id", {})
+    dataset_a = report.get("dataset_a_candidate_composite", {})
+    user_timestamp = report.get("dataset_a_same_user_timestamp", {})
     lines = [
         "# Deduplication diagnostics summary",
         "",
         f"- Status: `{report.get('status')}` (not CERTIFIED)",
         f"- Rows inspected: {report.get('rows_inspected')}",
-        f"- Dataset B duplicate groups: {b.get('duplicate_groups')}",
+        f"- Dataset B duplicate groups: {dataset_b.get('duplicate_groups')}",
         f"- Dataset B concordant / discordant: "
-        f"{b.get('concordant_groups')} / {b.get('discordant_groups')}",
+        f"{dataset_b.get('concordant_groups')} / "
+        f"{dataset_b.get('discordant_groups')}",
         f"- Dataset A candidate composite duplicate groups: "
-        f"{a.get('duplicate_groups')}",
+        f"{dataset_a.get('duplicate_groups')}",
         f"- Dataset A same-user+timestamp concordant / discordant: "
-        f"{ut.get('concordant_groups')} / {ut.get('discordant_groups')}",
+        f"{user_timestamp.get('concordant_groups')} / "
+        f"{user_timestamp.get('discordant_groups')}",
         "",
         "QDEDUP-B01 signature and L2 thresholds remain REVIEW_REQUIRED.",
         "Raw sources were not modified.",

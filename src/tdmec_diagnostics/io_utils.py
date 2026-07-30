@@ -46,7 +46,13 @@ def atomic_write_text(path: Path, text: str) -> None:
 
 
 def atomic_write_json(path: Path, obj: Any) -> None:
-    atomic_write_text(path, json.dumps(obj, indent=2, sort_keys=True, default=str))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with tmp.open("w", encoding="utf-8") as handle:
+        json.dump(obj, handle, indent=2, sort_keys=True, default=str)
+        handle.flush()
+        os.fsync(handle.fileno())
+    tmp.replace(path)
 
 
 class DiagnosticsRunLayout:

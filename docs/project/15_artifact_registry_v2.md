@@ -49,7 +49,7 @@ the documented run directories.
 | `src/tdmec_pilot/*` (11 modules) | ✅ | Dataset B pilot; PILOT_VALIDATED |
 | `scripts/run_discovery.py`, `run_dataset_b_pilot.py`, `build_node_index_map.py` | ✅ | — |
 | `configs/dataset_b_pilot.yaml` | ✅ | canonical + runtime |
-| `notebooks/03_dataset_b_controlled_pilot.ipynb` | ✅ | Colab wrapper |
+| `notebooks/03_dataset_b_controlled_pilot.ipynb` | ✅ | Lightning AI Studio wrapper |
 | `tests/test_pilot.py`, `test_tooling.py` | ✅ | 31 passing (22 + 9) |
 
 ## Model-ready artifacts (target)

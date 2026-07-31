@@ -7,20 +7,20 @@ English only. Phase 2 produces **diagnostic evidence**, not certifications.
 1. **Generic diagnostics framework** (calendar, dedup, text-length, coverage)
 2. **Concrete Dataset A adapter** `dataset_a_xlsx_v1` (docs/data/02–03 schema)
 3. **Concrete Dataset B adapter** `dataset_b_xlsx_v1` (docs/data/04–05 schema)
-4. **Colab/CLI runner** that does not require editing package source
+4. **Lightning AI Studio / CLI runner** that does not require editing package source
 
 ## What is not done in Cursor Cloud
 
-Real Dataset A/B files were **not** downloaded or processed here. Do not treat
-synthetic reports as real-data evidence for QCAL-B01 / QDEDUP-B01.
+Synthetic reports are not real-data evidence for QCAL-B01 / QDEDUP-B01. Use the
+Studio notebook or CLI against the imported private datasets for real evidence.
 
 ## Required configuration fields
 
 | Field | How to set | Notes |
 |---|---|---|
-| Dataset A source | `--dataset-a-source` or `--dataset-a-file` | `local:…` / `gdrive-anon:…` / `gdrive-api:…` |
+| Dataset A source | `--dataset-a-source` or `--dataset-a-file` | prefer `local:…` in Studio |
 | Dataset B source | `--dataset-b-source` or `--dataset-b-file` | same schemes |
-| Output root | `--output-root` | e.g. Drive publish root in Colab |
+| Output root | `--output-root` | Studio `TDMEC_PROJECT_OUTPUTS` |
 | Checkpoint root | `--checkpoint-root` (optional) | defaults under run dir |
 | Chunk size | `--chunk-size` | engineering only |
 | Provisional calendar | `--provisional-start/end` or YAML | diagnostic-only |
@@ -30,24 +30,29 @@ synthetic reports as real-data evidence for QCAL-B01 / QDEDUP-B01.
 | Node index map | `--node-index-map` | required for real mode; N=16736 |
 | Cache root | `--cache-root` | discovery download cache |
 
-Never put credentials, tokens, or private absolute paths in git-tracked YAML.
+Never put credentials, tokens, or private secrets in git-tracked YAML.
 
-## Exact Colab command template
+## Exact Lightning AI Studio command template
 
 ```bash
+cd /teamspace/studios/this_studio/community-evolution-modeling
 python3 -m pip install -e ".[test]" -r requirements.txt
 
 python3 -m tdmec_diagnostics.cli \
   --mode real \
   --config configs/phase2_diagnostics.yaml \
-  --output-root /content/drive/MyDrive/TDMEC_PROJECT_OUTPUTS \
-  --dataset-a-source local:/content/data/dataset_a \
-  --dataset-b-source local:/content/data/dataset_b \
-  --node-index-map /content/data/manifests/node_index_map.parquet \
+  --output-root /teamspace/studios/this_studio/TDMEC_PROJECT_OUTPUTS \
+  --dataset-a-source "local:/teamspace/studios/this_studio/Dataset A/core_army_pro_fans_tweets" \
+  --dataset-b-source "local:/teamspace/studios/this_studio/Dataset B/statuses_data" \
+  --node-index-map /teamspace/studios/this_studio/TDMEC_PROJECT_OUTPUTS/manifests/node_index_map.parquet \
   --resume-mode resume \
   --chunk-size 10000 \
   --cache-root /tmp/tdmec_cache
 ```
+
+Or run the notebook:
+
+`notebooks/phase2_real_data_smoke_and_validation.ipynb`
 
 Synthetic dry-run (always safe):
 
@@ -61,7 +66,7 @@ python3 -m tdmec_diagnostics.cli \
 
 ## Outputs
 
-Under `artifacts/diagnostics/<run_id>/`:
+Under `TDMEC_PROJECT_OUTPUTS/diagnostics/<run_id>/` (or `artifacts/diagnostics/<run_id>/`):
 
 - `reports/*.json` — machine-readable, privacy-safe
 - `human/*.md` — human summaries

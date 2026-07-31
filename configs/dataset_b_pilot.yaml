@@ -3,8 +3,8 @@
 # The config *hash* (over the "canonical" block below) is embedded in the run id
 # and guards resume: a run may only resume under an identical canonical config.
 # Paths, source location, and runtime knobs are intentionally EXCLUDED from the
-# canonical hash so that moving the output root or source between Colab / Linux
-# does not invalidate a resume.
+# canonical hash so that moving the output root or source between Lightning AI
+# Studio / Linux hosts does not invalidate a resume.
 
 pilot_name: dataset_b_controlled_pilot
 config_version: 1
@@ -62,10 +62,10 @@ expected_columns:
 runtime:
   chunk_size: 200000             # rows per chunk (checkpoint granularity)
   # Node index map (author_account_id -> node_index) produced during discovery.
-  # Provide via CLI/env; example paths shown for Colab and Linux.
-  node_index_map_path: null      # e.g. /content/drive/MyDrive/TDMEC_PROJECT_OUTPUTS/manifests/node_index_map.parquet
-  # Output root (persistent). On Colab this is the mounted Drive folder.
-  output_root: ./artifacts/pilot # e.g. /content/drive/MyDrive/TDMEC_PROJECT_OUTPUTS
+  # Provide via CLI/env; Lightning AI Studio example:
+  node_index_map_path: null      # e.g. /teamspace/studios/this_studio/TDMEC_PROJECT_OUTPUTS/manifests/node_index_map.parquet
+  # Output root (persistent Studio directory).
+  output_root: ./artifacts/pilot # e.g. /teamspace/studios/this_studio/TDMEC_PROJECT_OUTPUTS
   cache_root: /tmp/tdmec_cache
-  # Dataset B source (local dir, gdrive-anon:<id>, or gdrive-api:<id>).
+  # Dataset B source (prefer local:... in Studio; gdrive-* adapters remain optional).
   dataset_b_source: null

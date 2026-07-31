@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Controlled-environment / Colab-compatible Phase 2 diagnostics runner.
+"""Lightning AI Studio / controlled-environment Phase 2 diagnostics runner.
 
 Default mode is synthetic fixtures. Real-data execution requires authorized
-Dataset A/B access contracts and must not be invented in Cursor Cloud.
+local Dataset A/B paths (or optional Drive adapters) supplied at runtime.
 """
 from __future__ import annotations
 

@@ -49,12 +49,28 @@ pytest -q
 # Phase 2 diagnostics (synthetic fixtures by default)
 python scripts/run_phase2_diagnostics.py --help
 
+# Full Phase 2 on local Studio datasets with live progress on stderr
+python scripts/run_phase2_diagnostics.py \
+  --mode real \
+  --config configs/phase2_diagnostics.yaml \
+  --output-root /teamspace/studios/this_studio/TDMEC_PROJECT_OUTPUTS \
+  --dataset-a-source "local:/teamspace/studios/this_studio/Dataset A/core_army_pro_fans_tweets" \
+  --dataset-b-source "local:/teamspace/studios/this_studio/Dataset B/statuses_data" \
+  --node-index-map /teamspace/studios/this_studio/TDMEC_PROJECT_OUTPUTS/manifests/node_index_map.parquet \
+  --resume-mode resume \
+  --chunk-size 10000 \
+  --cache-root /tmp/tdmec_cache \
+  --verbose
+
 # Dataset B controlled pilot against local Studio data
 python scripts/run_dataset_b_pilot.py \
   --output-root /teamspace/studios/this_studio/TDMEC_PROJECT_OUTPUTS \
   --dataset-b-source "local:/teamspace/studios/this_studio/Dataset B/statuses_data" \
   --node-index-map /teamspace/studios/this_studio/TDMEC_PROJECT_OUTPUTS/manifests/node_index_map.parquet
 ```
+
+`--verbose` / `-v` prints privacy-safe stage/file/chunk progress to stderr. Omit it to
+keep the previous quiet CLI behavior (final JSON summary only).
 
 ### Notebooks
 

@@ -47,7 +47,19 @@ python3 -m tdmec_diagnostics.cli \
   --node-index-map /teamspace/studios/this_studio/TDMEC_PROJECT_OUTPUTS/manifests/node_index_map.parquet \
   --resume-mode resume \
   --chunk-size 10000 \
-  --cache-root /tmp/tdmec_cache
+  --cache-root /tmp/tdmec_cache \
+  --verbose
+```
+
+Add `--verbose` (or `-v`) to print privacy-safe progress lines to **stderr** while the
+final JSON summary remains on **stdout**. Progress logs include stage name, workbook
+basename, chunk counters, and file completion counts (`X/Y`). They never include
+absolute paths, tweet text, or account identifiers.
+
+Equivalent script entry point:
+
+```bash
+python scripts/run_phase2_diagnostics.py ... --verbose
 ```
 
 Or run the notebook:

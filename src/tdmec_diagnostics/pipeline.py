@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -84,6 +85,7 @@ class DiagnosticsPipeline:
     output_root: Path
     run_id: Optional[str] = None
     checkpoint_root: Optional[Path] = None
+    verbose: bool = False
     real_data_executed: bool = False
     real_data_status_message: str = (
         "Real data was not accessible or not authorized in this environment; "
@@ -97,6 +99,12 @@ class DiagnosticsPipeline:
         init=False,
         repr=False,
     )
+
+    def _vlog(self, message: str) -> None:
+        """Emit privacy-safe progress to stderr when verbose mode is enabled."""
+        if not self.verbose:
+            return
+        print(f"[phase2] {message}", file=sys.stderr, flush=True)
 
     def __post_init__(self) -> None:
         self.output_root = Path(self.output_root)
@@ -385,6 +393,25 @@ class DiagnosticsPipeline:
             frozen_nodes = set(node_lookup.mapping.values())
 
         file_names = [f.file_ref for f in files]
+        total_files = len(files)
+        files_complete_count = sum(
+            1
+            for spec in files
+            if (
+                self.config.enable_checkpoint
+                and (cp := self.checkpoint.files.get(spec.file_ref)) is not None
+                and cp.complete
+            )
+        )
+        self._vlog(
+            "stage=start "
+            f"run_id={self.run_id} "
+            f"files={total_files} "
+            f"already_complete={files_complete_count} "
+            f"resume_mode={self.config.resume_mode} "
+            f"chunk_size={self.config.chunk_size} "
+            f"checkpoint={'on' if self.config.enable_checkpoint else 'off'}"
+        )
         transaction_path = (
             self.checkpoint.root / TransactionalRunState.FILENAME
         )
@@ -422,11 +449,25 @@ class DiagnosticsPipeline:
                 )
             )
         ):
-            return self._load_sealed_result()
+            self._vlog(
+                "stage=sealed-resume "
+                f"files={total_files}/{total_files} "
+                "action=reload_completed_artifacts"
+            )
+            result = self._load_sealed_result()
+            self._vlog(
+                "stage=done "
+                f"status={result.get('status')} "
+                f"complete={result.get('complete')} "
+                "resumed_from_sealed=true"
+            )
+            return result
 
+        self._vlog("stage=load-accumulators")
         cal, dedup, text, cov, _loaded = self._load_accumulators(
             boundaries=boundaries, n_univ=n_univ, frozen_nodes=frozen_nodes
         )
+        self._vlog(f"stage=load-accumulators done loaded_from_checkpoint={_loaded}")
 
         # Reject checksum drift against the authoritative transaction snapshot.
         if self.config.enable_checkpoint:
@@ -447,10 +488,11 @@ class DiagnosticsPipeline:
         files_processed = 0
         chunks_processed = 0
         interrupted = False
-        for spec in files:
+        for file_index, spec in enumerate(files, start=1):
+            safe_name = privacy_safe_file_ref(spec.file_ref)
             source_meta.append(
                 {
-                    "file_ref": privacy_safe_file_ref(spec.file_ref),
+                    "file_ref": safe_name,
                     "dataset": spec.dataset,
                     "checksum": spec.checksum,
                 }
@@ -467,6 +509,13 @@ class DiagnosticsPipeline:
                     raise InputChecksumDriftError(
                         f"source checksum drift for {privacy_safe_file_ref(spec.file_ref)}"
                     )
+                self._vlog(
+                    "stage=process "
+                    f"file={safe_name} dataset={spec.dataset} "
+                    f"index={file_index}/{total_files} "
+                    f"complete_files={files_complete_count}/{total_files} "
+                    "action=skip_already_complete"
+                )
                 continue
 
             cp = self.checkpoint.files.get(spec.file_ref)
@@ -484,6 +533,13 @@ class DiagnosticsPipeline:
                     spec.file_ref,
                     source_checksum=spec.checksum,
                 )
+            self._vlog(
+                "stage=process "
+                f"file={safe_name} dataset={spec.dataset} "
+                f"index={file_index}/{total_files} "
+                f"start_after_source_row={start_after_source_row} "
+                "action=begin_file"
+            )
 
             # Stream only records after the last transactionally committed row.
             if spec.records is not None:
@@ -545,12 +601,27 @@ class DiagnosticsPipeline:
                     raise
 
                 chunks_processed += 1
+                self._vlog(
+                    "stage=process "
+                    f"file={safe_name} dataset={spec.dataset} "
+                    f"index={file_index}/{total_files} "
+                    f"chunk={next_chunk_index if self.config.enable_checkpoint else chunks_processed} "
+                    f"rows={len(chunk)} accepted={accepted} rejected={rejected} "
+                    f"last_source_row={last_source_row_number} "
+                    f"complete_files={files_complete_count}/{total_files} "
+                    "action=chunk_committed"
+                )
                 if (
                     interrupt_after_chunks is not None
                     and chunks_processed >= interrupt_after_chunks
                 ):
                     file_exhausted = False
                     interrupted = True
+                    self._vlog(
+                        "stage=process "
+                        f"file={safe_name} action=interrupt_after_chunks "
+                        f"chunks_processed={chunks_processed}"
+                    )
                     break
 
             if interrupted:
@@ -564,10 +635,32 @@ class DiagnosticsPipeline:
                 except Exception:
                     self._rollback_progress_transaction()
                     raise
+                files_complete_count += 1
+                self._vlog(
+                    "stage=process "
+                    f"file={safe_name} dataset={spec.dataset} "
+                    f"index={file_index}/{total_files} "
+                    f"complete_files={files_complete_count}/{total_files} "
+                    "action=file_complete"
+                )
+            elif file_exhausted:
+                files_complete_count += 1
+                self._vlog(
+                    "stage=process "
+                    f"file={safe_name} dataset={spec.dataset} "
+                    f"index={file_index}/{total_files} "
+                    f"complete_files={files_complete_count}/{total_files} "
+                    "action=file_complete"
+                )
 
             files_processed += 1
             if interrupt_after_files is not None and files_processed >= interrupt_after_files:
                 interrupted = True
+                self._vlog(
+                    "stage=process "
+                    f"action=interrupt_after_files "
+                    f"files_processed={files_processed}"
+                )
                 break
 
         complete = (
@@ -585,10 +678,20 @@ class DiagnosticsPipeline:
                 self.transaction_state = None
             else:
                 dedup.close()
+            self._vlog(
+                "stage=incomplete "
+                f"complete_files={files_complete_count}/{total_files} "
+                "action=resume_required"
+            )
             raise IncompleteRunError(
                 "diagnostics run incomplete; resume required before sealing reports"
             )
 
+        self._vlog(
+            "stage=seal "
+            f"complete_files={files_complete_count}/{total_files} "
+            "action=write_reports_and_manifest"
+        )
         result = self._seal_and_persist(
             cal=cal,
             dedup=dedup,
@@ -604,6 +707,12 @@ class DiagnosticsPipeline:
             self.transaction_state = None
         else:
             dedup.close()
+        self._vlog(
+            "stage=done "
+            f"status={result.get('status')} "
+            f"complete={result.get('complete')} "
+            f"files={total_files}"
+        )
         return result
 
     def run_on_records(
@@ -837,6 +946,7 @@ class DiagnosticsPipeline:
             "Real data was not accessible or not authorized in this environment; "
             "diagnostics executed on synthetic fixtures only."
         )
+        self._vlog("stage=synthetic-fixtures preparing in-memory records")
         return self.run_on_records(
             build_synthetic_records(),
             node_universe_size=len(SYN_NODE_UNIVERSE),
@@ -859,9 +969,20 @@ class DiagnosticsPipeline:
         n_univ = self._n_universe()
         if n_univ != C.N_NODES and self.config.node_universe_size is None:
             n_univ = C.N_NODES
+        self._vlog(
+            "stage=load-node-map "
+            f"expected_n={n_univ} "
+            f"map_basename={privacy_safe_file_ref(Path(node_index_map_path).name)}"
+        )
         lookup = load_node_universe_lookup(node_index_map_path, expected_count=n_univ)
+        self._vlog(f"stage=load-node-map done n={len(lookup.mapping)}")
 
         specs: List[FileSpec] = []
+        self._vlog(
+            "stage=resolve-inputs "
+            f"dataset_a_files={len(dataset_a_paths)} "
+            f"dataset_b_files={len(dataset_b_paths)}"
+        )
         for p in dataset_a_paths:
             path = Path(p)
             checksum = sha256_file(path) if path.is_file() else None
@@ -889,6 +1010,7 @@ class DiagnosticsPipeline:
             "Real-data adapters executed on configured local workbook paths. "
             "Results remain DIAGNOSTIC / REVIEW_REQUIRED — not CERTIFIED."
         )
+        self._vlog(f"stage=resolve-inputs done total_workbooks={len(specs)}")
         # Ensure production N unless explicitly overridden in config
         return self.run_on_files(
             specs,
@@ -937,9 +1059,22 @@ def run_diagnostics(
     cache_root: str | Path = "/tmp/tdmec_cache",
     dataset_a_files: Optional[Sequence[str | Path]] = None,
     dataset_b_files: Optional[Sequence[str | Path]] = None,
+    verbose: bool = False,
 ) -> Dict[str, Any]:
-    """Colab/controlled-environment entry point."""
+    """Lightning AI Studio / controlled-environment entry point."""
     cfg = config or load_diagnostics_config(config_path)
+
+    def _make_pipeline(active_cfg: DiagnosticsConfig) -> DiagnosticsPipeline:
+        return DiagnosticsPipeline(
+            config=active_cfg,
+            output_root=Path(output_root),
+            run_id=run_id,
+            checkpoint_root=(
+                Path(checkpoint_root) if checkpoint_root else None
+            ),
+            verbose=verbose,
+        )
+
     if mode == "synthetic":
         if (
             cfg.provisional_start_label == "2017-Q4"
@@ -954,18 +1089,17 @@ def run_diagnostics(
                 dataset_b_source_scheme="synthetic",
                 source_format="synthetic",
             )
-        pipe = DiagnosticsPipeline(
-            config=cfg,
-            output_root=Path(output_root),
-            run_id=run_id,
-            checkpoint_root=(
-                Path(checkpoint_root) if checkpoint_root else None
-            ),
-        )
+        pipe = _make_pipeline(cfg)
         return pipe.run_synthetic()
     if mode == "real":
         a_paths: List[Path] = []
         b_paths: List[Path] = []
+        if verbose:
+            print(
+                "[phase2] stage=resolve-sources begin",
+                file=sys.stderr,
+                flush=True,
+            )
         if dataset_a_files:
             a_paths = [Path(p) for p in dataset_a_files]
         elif dataset_a_source:
@@ -977,6 +1111,14 @@ def run_diagnostics(
         elif dataset_b_source:
             b_paths = _resolve_source_to_local_paths(
                 dataset_b_source, Path(cache_root)
+            )
+        if verbose:
+            print(
+                "[phase2] stage=resolve-sources "
+                f"dataset_a_files={len(a_paths)} "
+                f"dataset_b_files={len(b_paths)}",
+                file=sys.stderr,
+                flush=True,
             )
         if not a_paths and not b_paths:
             raise AdapterConfigurationError(
@@ -1002,14 +1144,7 @@ def run_diagnostics(
             dataset_b_source_scheme=scheme_b,
             source_format="xlsx",
         )
-        pipe = DiagnosticsPipeline(
-            config=cfg,
-            output_root=Path(output_root),
-            run_id=run_id,
-            checkpoint_root=(
-                Path(checkpoint_root) if checkpoint_root else None
-            ),
-        )
+        pipe = _make_pipeline(cfg)
         return pipe.run_real(
             dataset_a_paths=a_paths,
             dataset_b_paths=b_paths,

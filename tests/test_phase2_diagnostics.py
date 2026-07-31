@@ -813,6 +813,51 @@ def test_cli_help_and_synthetic_smoke(tmp_path: Path):
     assert rc == 0
 
 
+def test_cli_verbose_emits_progress_to_stderr(tmp_path: Path, capsys):
+    from tdmec_diagnostics.cli import main
+
+    quiet_root = tmp_path / "quiet"
+    verbose_root = tmp_path / "verbose"
+    quiet_rc = main(
+        [
+            "--mode",
+            "synthetic",
+            "--output-root",
+            str(quiet_root),
+            "--run-id",
+            "cli-quiet",
+            "--resume-mode",
+            "restart",
+        ]
+    )
+    quiet_err = capsys.readouterr().err
+    assert quiet_rc == 0
+    assert "[phase2]" not in quiet_err
+
+    verbose_rc = main(
+        [
+            "--mode",
+            "synthetic",
+            "--output-root",
+            str(verbose_root),
+            "--run-id",
+            "cli-verbose",
+            "--resume-mode",
+            "restart",
+            "--verbose",
+        ]
+    )
+    captured = capsys.readouterr()
+    assert verbose_rc == 0
+    assert "[phase2] stage=start" in captured.err
+    assert "action=chunk_committed" in captured.err or "action=file_complete" in captured.err
+    assert "[phase2] stage=done" in captured.err
+    assert "/home/" not in captured.err
+    assert "/teamspace/" not in captured.err
+    # Final machine-readable summary remains on stdout.
+    assert '"run_id": "cli-verbose"' in captured.out
+
+
 def test_cli_real_mode_missing_config_errors(tmp_path: Path):
     from tdmec_diagnostics.cli import main
 

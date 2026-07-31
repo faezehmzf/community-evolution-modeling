@@ -63,6 +63,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Path to frozen node_index_map.parquet (required for real mode)",
     )
     p.add_argument("--cache-root", type=str, default="/tmp/tdmec_cache")
+    p.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        help=(
+            "Print privacy-safe per-file/per-chunk progress to stderr "
+            "(basenames and counters only; no paths, text, or account IDs)"
+        ),
+    )
     return p
 
 
@@ -104,6 +113,7 @@ def main(argv: list[str] | None = None) -> int:
             dataset_b_files=args.dataset_b_file,
             node_index_map=args.node_index_map,
             cache_root=args.cache_root,
+            verbose=args.verbose,
         )
     except (
         AdapterConfigurationError,

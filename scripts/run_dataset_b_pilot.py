@@ -1,16 +1,16 @@
 """CLI entry point for the Dataset B controlled preprocessing pilot.
 
-Colab-independent: the same command runs on a normal Linux filesystem (pass a
-local ``--output-root``) or on Colab (pass a mounted Drive path). It processes
-exactly the two configured input files, supports resume, and never touches the
-other 68 files, embeddings, or training.
+Platform-neutral: the same command runs on Lightning AI Studio or any normal
+Linux filesystem when given a local ``--output-root`` and ``local:`` source.
+It processes exactly the two configured input files, supports resume, and never
+touches the other Dataset B files, embeddings, or training.
 
-Example:
+Example (Lightning AI Studio):
     python scripts/run_dataset_b_pilot.py \
         --config configs/dataset_b_pilot.yaml \
-        --dataset-b-source "$DATASET_B_SOURCE" \
-        --node-index-map /path/to/node_index_map.parquet \
-        --output-root /content/drive/MyDrive/TDMEC_PROJECT_OUTPUTS \
+        --dataset-b-source "local:/teamspace/studios/this_studio/Dataset B/statuses_data" \
+        --node-index-map /teamspace/studios/this_studio/TDMEC_PROJECT_OUTPUTS/manifests/node_index_map.parquet \
+        --output-root /teamspace/studios/this_studio/TDMEC_PROJECT_OUTPUTS \
         --resume
 """
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""CLI entry point for Phase 2 diagnostics (Colab / controlled environments)."""
+"""CLI entry point for Phase 2 diagnostics (Lightning AI Studio / controlled environments)."""
 from __future__ import annotations
 
 import argparse

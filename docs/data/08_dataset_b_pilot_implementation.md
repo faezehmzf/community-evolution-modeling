@@ -1,6 +1,6 @@
 # 08 — Dataset B Controlled Pilot: Implementation & Approval
 
-Implements the plan in `07_dataset_b_pilot_plan.md`. Reusable, Colab-independent
+Implements the plan in `07_dataset_b_pilot_plan.md`. Reusable, platform-neutral
 code processes **exactly** `statuses-2.xlsx` and `statuses-69.xlsx`. No embeddings,
 no training, no full 70-file run, no source mutation.
 
@@ -14,16 +14,15 @@ no training, no full 70-file run, no source mutation.
 - `scripts/run_dataset_b_pilot.py` — CLI runner (resume-aware).
 - `scripts/build_node_index_map.py` — builds the immutable 16,736-node map from Dataset A.
 - `configs/dataset_b_pilot.yaml` — canonical + runtime config.
-- `notebooks/03_dataset_b_controlled_pilot.ipynb` — thin Colab wrapper.
+- `notebooks/03_dataset_b_controlled_pilot.ipynb` — thin Lightning AI Studio wrapper.
 - `tests/test_pilot.py` — 22 unit + integration tests.
 
-## 2. Colab execution steps
+## 2. Lightning AI Studio execution steps
 
-1. Open `notebooks/03_dataset_b_controlled_pilot.ipynb` in Colab.
-2. Run cell 1 → mounts Drive; `OUTPUT_ROOT = /content/drive/MyDrive/TDMEC_PROJECT_OUTPUTS`.
-3. Run cell 2 → puts `src/` on path + installs `requirements.txt`.
-4. Run cell 3 → set `DATASET_B_SOURCE` and `NODE_INDEX_MAP_PATH` (build the map once
-   with `scripts/build_node_index_map.py` and store it under `…/manifests/`).
+1. Open `notebooks/03_dataset_b_controlled_pilot.ipynb` in Lightning AI Studio.
+2. Run cell 1 → sets local Studio paths (`OUTPUT_ROOT = …/TDMEC_PROJECT_OUTPUTS`).
+3. Run cell 2 → installs the editable package and puts `src/` on path.
+4. Run cell 3 → sets `DATASET_B_SOURCE=local:…` and `NODE_INDEX_MAP_PATH`.
 5. Run cell 4 → executes the pilot; prints `run_id`, gate results, accounting.
 6. Run cell 5 → lists `pilot/<run_id>/` outputs + gate summary.
 7. To **resume**, re-run cell 4 with `run_id='<printed run_id>'`.
@@ -33,9 +32,10 @@ no training, no full 70-file run, no source mutation.
 ```bash
 python scripts/run_dataset_b_pilot.py \
   --config configs/dataset_b_pilot.yaml \
-  --dataset-b-source "$DATASET_B_SOURCE" \
-  --node-index-map "$NODE_INDEX_MAP_PATH" \
-  --output-root "$PILOT_OUTPUT_ROOT"        # add: --run-id <id> to resume
+  --dataset-b-source "local:/teamspace/studios/this_studio/Dataset B/statuses_data" \
+  --node-index-map /teamspace/studios/this_studio/TDMEC_PROJECT_OUTPUTS/manifests/node_index_map.parquet \
+  --output-root /teamspace/studios/this_studio/TDMEC_PROJECT_OUTPUTS
+  # add: --run-id <id> --resume to resume
 ```
 
 ## 4. Tests run and results

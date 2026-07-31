@@ -178,11 +178,12 @@ See blueprint §6: ID safety, N=16736, relations, snapshots, B reconcile, TDMEC-
 
 ## 26. Exact Colab execution sequence
 
-See `docs/handoff/09_colab_execution_runbook.md`.
+See `docs/handoff/09_lightning_studio_execution_runbook.md`
+(supersedes the former Colab runbook).
 
 ## 27. Persistent storage layout
 
-Default root: `/content/drive/MyDrive/TDMEC_PROJECT_OUTPUTS/`
+Default root: `/teamspace/studios/this_studio/TDMEC_PROJECT_OUTPUTS/`
 
 ```
 TDMEC_PROJECT_OUTPUTS/

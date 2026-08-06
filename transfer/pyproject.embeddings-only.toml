@@ -1,0 +1,41 @@
+# Embedding-only install metadata for the target Studio transfer bundle.
+# Copy over pyproject.toml after extraction if the full repository is unavailable:
+#   cp transfer/pyproject.embeddings-only.toml pyproject.toml
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tdmec-embeddings-transfer"
+version = "0.2.0"
+description = "Transferable TDMEC embedding-stage package (code only; no private data)."
+requires-python = ">=3.10"
+dependencies = [
+    "pandas>=2.2",
+    "pyarrow>=15.0",
+    "PyYAML>=6.0",
+    "numpy>=1.26",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+embeddings = [
+    "torch>=2.2,<2.7",
+    "transformers>=4.51,<5",
+    "accelerate>=0.33,<2",
+    "tokenizers>=0.19,<0.22",
+    "safetensors>=0.4,<0.6",
+    "huggingface_hub>=0.24,<0.30",
+    "psutil>=5.9,<7",
+]
+
+[project.scripts]
+tdmec-embedding-files = "tdmec_embeddings.file_cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["tdmec", "tdmec.*", "tdmec_embeddings", "tdmec_embeddings.*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

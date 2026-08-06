@@ -1,0 +1,42 @@
+# IMPLEMENTED_NOT_EXECUTED / TRANSFER_PENDING_VALIDATION
+# Example mock end-to-end embedding configuration.
+# Paths are placeholders; override via CLI or environment variables.
+# Do not hardcode a Studio root into scientific logic.
+schema_version: tdmec-embedding-run-config-v1
+execution_mode: mock
+embedding_run_id: mock_e2e_transfer_001
+output_root: ${TDMEC_EMBEDDING_OUTPUT_ROOT}
+force: false
+resume: false
+dry_run: false
+input_batch_size: 256
+output_shard_size: 512
+max_node_rows: 128
+max_event_rows: 128
+node_source:
+  artifact_root: ${TDMEC_DATASET_B_ROOT}
+  run_id: smoke_b_pg_001
+event_source:
+  artifact_root: ${TDMEC_DATASET_A_ROOT}
+  run_id: smoke_a_pg_001
+encoder:
+  backend: mock
+  model_name: tdmec-deterministic-mock
+  model_revision: sha256-counter-v1
+  tokenizer_revision: not-applicable
+  instruction: ""
+  output_dimension: 16
+  max_length: 512
+  precision: fp32
+  device: cpu
+  batch_size: 64
+  max_oom_retries: 0
+  local_files_only: true
+  allow_cpu: true
+sampling:
+  strategy: deterministic_prefix
+  seed: 20260804
+pooling:
+  # PROVISIONAL pending Q-EMB N1 vs N2 pilot evidence.
+  final_normalization: none
+  delta_batch_rows: 4096

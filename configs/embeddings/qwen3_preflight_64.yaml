@@ -1,0 +1,62 @@
+# IMPLEMENTED_NOT_EXECUTED / TRANSFER_PENDING_VALIDATION
+# Qwen3 64+64 preflight template.
+#
+# Provisional Q-EMB decisions (must not be treated as final thesis values):
+#   - checkpoint: Qwen/Qwen3-Embedding-4B
+#   - D_text / output_dimension: 2560 (native hypothesis; verify on model card)
+#   - max_length: 512 (diagnostics-pending)
+#   - Stage-A pooling: last-token / left-pad (official Transformers example hypothesis)
+#   - instruction: I1 pilot candidate wording
+#   - final Stage-B L2: none (N1) until N1 vs N2 evidence
+#
+# Before any real run in the target Studio:
+#   export QWEN3_MODEL_REVISION=<immutable-commit-or-snapshot-sha>
+#   export QWEN3_TOKENIZER_REVISION=<immutable-commit-or-snapshot-sha>
+#   export TDMEC_DATASET_A_ROOT=...
+#   export TDMEC_DATASET_B_ROOT=...
+#   export TDMEC_EMBEDDING_OUTPUT_ROOT=...
+#   export HF_HOME=...   # optional persistent Hugging Face cache
+schema_version: tdmec-embedding-run-config-v1
+execution_mode: qwen_preflight
+embedding_run_id: qwen3_preflight_64_001
+output_root: ${TDMEC_EMBEDDING_OUTPUT_ROOT}
+force: false
+resume: false
+dry_run: false
+input_batch_size: 64
+output_shard_size: 64
+max_node_rows: 64
+max_event_rows: 64
+node_source:
+  artifact_root: ${TDMEC_DATASET_B_ROOT}
+  run_id: smoke_b_pg_001
+event_source:
+  artifact_root: ${TDMEC_DATASET_A_ROOT}
+  run_id: smoke_a_pg_001
+encoder:
+  backend: qwen3
+  model_name: Qwen/Qwen3-Embedding-4B
+  model_revision: ${QWEN3_MODEL_REVISION}
+  tokenizer_revision: ${QWEN3_TOKENIZER_REVISION}
+  instruction: >-
+    Represent the topic, stance, sentiment, and social meaning of this
+    social-media post for temporal community analysis.
+  output_dimension: 2560
+  max_length: 512
+  precision: auto
+  device: cuda:0
+  batch_size: 8
+  max_oom_retries: 4
+  local_files_only: false
+  allow_cpu: false
+  attn_implementation: null
+  enable_provisional_mrl_truncation: false
+sampling:
+  strategy: deterministic_stratified_hash
+  seed: 20260804
+  node_hash_buckets: 64
+  short_text_max_chars: 64
+  medium_text_max_chars: 256
+pooling:
+  final_normalization: none
+  delta_batch_rows: 4096

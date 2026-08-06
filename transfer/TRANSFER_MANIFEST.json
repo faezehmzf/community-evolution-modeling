@@ -1,0 +1,319 @@
+{
+  "created_at_utc": "2026-08-04T13:23:07Z",
+  "excludes": [
+    ".git",
+    ".env",
+    "secrets",
+    "caches",
+    "source datasets",
+    "preprocessing parquet artifacts",
+    "generated embedding outputs",
+    "model caches",
+    "model weights",
+    "__pycache__",
+    ".pytest_cache"
+  ],
+  "file_count": 42,
+  "files": [
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/configs/embeddings/mock_end_to_end.yaml",
+      "repository_relative_path": "configs/embeddings/mock_end_to_end.yaml",
+      "required": true,
+      "sha256": "07233d92577770be340834b6f5f5e934e1d54023a9e561e1cc94a379f1c74291",
+      "size_bytes": 1154
+    },
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/configs/embeddings/qwen3_bounded_pilot_10k.yaml",
+      "repository_relative_path": "configs/embeddings/qwen3_bounded_pilot_10k.yaml",
+      "required": true,
+      "sha256": "6daaffaf0422a8be953704701bae2ffcc366545e643331afecbe312174cc9096",
+      "size_bytes": 1644
+    },
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/configs/embeddings/qwen3_preflight_64.yaml",
+      "repository_relative_path": "configs/embeddings/qwen3_preflight_64.yaml",
+      "required": true,
+      "sha256": "1152e67fdf6ac2381e0c6d18658aae1713a5c78fca22e5b9bf7147d0cff0832e",
+      "size_bytes": 2077
+    },
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/docs/handoff/10_target_studio_embedding_runbook.md",
+      "repository_relative_path": "docs/handoff/10_target_studio_embedding_runbook.md",
+      "required": true,
+      "sha256": "0a5281837f43076f0d226d37275b3d3d710351a88ca2453d74c6cbdcd4fecb1a",
+      "size_bytes": 9636
+    },
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/docs/implementation/embedding_stage_implementation_notes.md",
+      "repository_relative_path": "docs/implementation/embedding_stage_implementation_notes.md",
+      "required": true,
+      "sha256": "947c7bd5711a1417ab2b24d7964de26e0b4e5b610389d06490697e13be1755d5",
+      "size_bytes": 2109
+    },
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/docs/method/16_q_emb_embedding_contract_and_pilot_spec.md",
+      "repository_relative_path": "docs/method/16_q_emb_embedding_contract_and_pilot_spec.md",
+      "required": true,
+      "sha256": "de345583f2a91e335cd736f4268b399743ba90b692fabd830bbb8799a112c35c",
+      "size_bytes": 19804
+    },
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/pyproject.toml",
+      "repository_relative_path": "pyproject.toml",
+      "required": true,
+      "sha256": "6e62fe6c2afe6140e2de163d88754ddec851c3c7042eec1ca53a5aa329b08ac5",
+      "size_bytes": 1691
+    },
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/requirements/embeddings-target-studio.txt",
+      "repository_relative_path": "requirements/embeddings-target-studio.txt",
+      "required": true,
+      "sha256": "820a9e9217de5ec2508aa1693ebb06ed2cf08d0599c2c2cf37880ea7943fab28",
+      "size_bytes": 1782
+    },
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/src/tdmec/__init__.py",
+      "repository_relative_path": "src/tdmec/__init__.py",
+      "required": true,
+      "sha256": "ef209bbd7d2e0bd545b99153d6c93bf97bda404f906bb2b69407e48a5fd3354c",
+      "size_bytes": 608
+    },
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/src/tdmec/config/__init__.py",
+      "repository_relative_path": "src/tdmec/config/__init__.py",
+      "required": true,
+      "sha256": "a4c683def51a7c38adeeb86b506841ac957c30e1b1aca5565b7be579fd35daf7",
+      "size_bytes": 804
+    },
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/src/tdmec/constants.py",
+      "repository_relative_path": "src/tdmec/constants.py",
+      "required": true,
+      "sha256": "b0506af92189a0b36a59492121b9a265258446357cf7f7c7b42ab1299c4a015a",
+      "size_bytes": 5750
+    },
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/src/tdmec/fixtures/__init__.py",
+      "repository_relative_path": "src/tdmec/fixtures/__init__.py",
+      "required": true,
+      "sha256": "93be5420dcc672a08e2f3209a40d2e6d098aa05dfd5cddc40cfa1c83090c644c",
+      "size_bytes": 107
+    },
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/src/tdmec/hashing.py",
+      "repository_relative_path": "src/tdmec/hashing.py",
+      "required": true,
+      "sha256": "4b07c072bc7ab1b832151891b4edd7b6346dc559c06af6b00765fdc8d0691771",
+      "size_bytes": 8176
+    },
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/src/tdmec/schemas/__init__.py",
+      "repository_relative_path": "src/tdmec/schemas/__init__.py",
+      "required": true,
+      "sha256": "325f7ad6bc6e6b21f9031c2865ab8b0dd78d8f573762ef00d8315fa63ae23547",
+      "size_bytes": 760
+    },
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/src/tdmec/unresolved.py",
+      "repository_relative_path": "src/tdmec/unresolved.py",
+      "required": true,
+      "sha256": "8fc36f0f54c2d7381026da31a0e90b4898ab0e2f8f1cb43262478465cca58304",
+      "size_bytes": 1525
+    },
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/src/tdmec/validation/__init__.py",
+      "repository_relative_path": "src/tdmec/validation/__init__.py",
+      "required": true,
+      "sha256": "7456fe8bf84e8b9de9c2346941b93607c6935d4ebd404d7c437b04cabebf6728",
+      "size_bytes": 335
+    },
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/src/tdmec_embeddings/__init__.py",
+      "repository_relative_path": "src/tdmec_embeddings/__init__.py",
+      "required": true,
+      "sha256": "690219587d66df57b5b05c98815a3a231cef8da00bd3c04b304118572ab03cb3",
+      "size_bytes": 308
+    },
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/src/tdmec_embeddings/cli.py",
+      "repository_relative_path": "src/tdmec_embeddings/cli.py",
+      "required": true,
+      "sha256": "87a26bd2e4f0261dfa53a336ede1e96e2b6589a4b45ffb8c7b96f353f5db19cd",
+      "size_bytes": 2578
+    },
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/src/tdmec_embeddings/config.py",
+      "repository_relative_path": "src/tdmec_embeddings/config.py",
+      "required": true,
+      "sha256": "32ab329cf2504766a814e5bb35d7a462cbe4eaa96cfb24eccb5ed0a422bb4f79",
+      "size_bytes": 10217
+    },
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/src/tdmec_embeddings/eligibility.py",
+      "repository_relative_path": "src/tdmec_embeddings/eligibility.py",
+      "required": true,
+      "sha256": "481a2658eae402156f8167942c3edfe907d58fd301b1f1e4758484040413c04a",
+      "size_bytes": 21399
+    },
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/src/tdmec_embeddings/file_cli.py",
+      "repository_relative_path": "src/tdmec_embeddings/file_cli.py",
+      "required": true,
+      "sha256": "13ce74cd865fd58b8570e3e775d3ad8551b1af14f059b43cc99128ebd11aab5d",
+      "size_bytes": 3875
+    },
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/src/tdmec_embeddings/file_sources.py",
+      "repository_relative_path": "src/tdmec_embeddings/file_sources.py",
+      "required": true,
+      "sha256": "eb695fff06dfd30537d579c0eab68c1dd690252d55a3784645e10fcc8a71e787",
+      "size_bytes": 21892
+    },
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/src/tdmec_embeddings/file_writer.py",
+      "repository_relative_path": "src/tdmec_embeddings/file_writer.py",
+      "required": true,
+      "sha256": "15df387d0e0785dfc087b1e12d18c6ca1504129470c0a393cdb44f0b36b143c4",
+      "size_bytes": 30053
+    },
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/src/tdmec_embeddings/implementation_status.py",
+      "repository_relative_path": "src/tdmec_embeddings/implementation_status.py",
+      "required": true,
+      "sha256": "27cbab5d573c5f6de3cbd93b6bd1ebc5516384d92864096e7e38854ff3026ebb",
+      "size_bytes": 348
+    },
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/src/tdmec_embeddings/mock_encoder.py",
+      "repository_relative_path": "src/tdmec_embeddings/mock_encoder.py",
+      "required": true,
+      "sha256": "444d941c890f70bb2f16da2bf18331b93091eb1646ba9e5cf3759b4a2cf68373",
+      "size_bytes": 5284
+    },
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/src/tdmec_embeddings/pipeline.py",
+      "repository_relative_path": "src/tdmec_embeddings/pipeline.py",
+      "required": true,
+      "sha256": "8f274f24bac11015973c7146e471f39472bdced966bd1b7e76b568f1a68ca8f6",
+      "size_bytes": 13847
+    },
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/src/tdmec_embeddings/pooling.py",
+      "repository_relative_path": "src/tdmec_embeddings/pooling.py",
+      "required": true,
+      "sha256": "02d7ce132faaaee86b17d83cd8ad94d28c00d04e07807b5e6905d0d8f0a44d09",
+      "size_bytes": 25525
+    },
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/src/tdmec_embeddings/qwen_encoder.py",
+      "repository_relative_path": "src/tdmec_embeddings/qwen_encoder.py",
+      "required": true,
+      "sha256": "342c46c634c24b20f96141bb51df0cb121ccc93671a2bf8783e5864a2e75f09e",
+      "size_bytes": 14184
+    },
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/src/tdmec_embeddings/reader.py",
+      "repository_relative_path": "src/tdmec_embeddings/reader.py",
+      "required": true,
+      "sha256": "2f1d8b1b4c76943b8fa12ae6cce3a95dd28def014da8691c15817ca2ab3f2ada",
+      "size_bytes": 1091
+    },
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/src/tdmec_embeddings/sampling.py",
+      "repository_relative_path": "src/tdmec_embeddings/sampling.py",
+      "required": true,
+      "sha256": "df414c39930fbd3818303726996f39ae116ea9ba1aa8be757f604b0f63da06ec",
+      "size_bytes": 6909
+    },
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/src/tdmec_embeddings/writer.py",
+      "repository_relative_path": "src/tdmec_embeddings/writer.py",
+      "required": true,
+      "sha256": "c7068aa0c87e29635cfe310e5f0ed7b0db5f06ce30695785f8270f85f5975e08",
+      "size_bytes": 1730
+    },
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/tests/test_embeddings_eligibility.py",
+      "repository_relative_path": "tests/test_embeddings_eligibility.py",
+      "required": true,
+      "sha256": "6ffa95d9e21b6ea2e414725756ee33c7c3beb12cacf50aabdd8256e72264725e",
+      "size_bytes": 10504
+    },
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/tests/test_embeddings_file_sources.py",
+      "repository_relative_path": "tests/test_embeddings_file_sources.py",
+      "required": true,
+      "sha256": "0e76a622d6dcbf223f9f79c55025afcd7770fa87e0bc9973f3aa923f2b5ec144",
+      "size_bytes": 9061
+    },
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/tests/test_embeddings_file_writer.py",
+      "repository_relative_path": "tests/test_embeddings_file_writer.py",
+      "required": true,
+      "sha256": "f792e23b1ee17f5a58c84be3eb56767e6c0741af5ee569be7d466e02eb43b3ff",
+      "size_bytes": 11491
+    },
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/tests/test_embeddings_pipeline.py",
+      "repository_relative_path": "tests/test_embeddings_pipeline.py",
+      "required": true,
+      "sha256": "fe3947953c8a8aa6a65c149c9372024bba21d85387dcd461702f2ffff502d6e7",
+      "size_bytes": 4249
+    },
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/tests/test_embeddings_pooling.py",
+      "repository_relative_path": "tests/test_embeddings_pooling.py",
+      "required": true,
+      "sha256": "6f8ac8f09c5e76593f49a64d79d10574055c43484fab17579aaf679fd48d4df2",
+      "size_bytes": 8054
+    },
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/tests/test_embeddings_qwen_encoder.py",
+      "repository_relative_path": "tests/test_embeddings_qwen_encoder.py",
+      "required": true,
+      "sha256": "568ebc02330c849276eb2476ae6923111e015d5c0558576e74b61f8980701618",
+      "size_bytes": 7242
+    },
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/tests/test_embeddings_sampling.py",
+      "repository_relative_path": "tests/test_embeddings_sampling.py",
+      "required": true,
+      "sha256": "d1cfaf8eb32d8b8993706a1a5fcdfd57ec04c1fc3e8b0e503d7441420eb1540e",
+      "size_bytes": 4013
+    },
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/transfer/EXTRACT_AND_INSTALL.md",
+      "repository_relative_path": "transfer/EXTRACT_AND_INSTALL.md",
+      "required": true,
+      "sha256": "97f1b9d880c6fe858aae3dc3af20f00b7b3188f1d2e65e4e8d836ea670563313",
+      "size_bytes": 1840
+    },
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/transfer/TRANSFER_INVENTORY.md",
+      "repository_relative_path": "transfer/TRANSFER_INVENTORY.md",
+      "required": true,
+      "sha256": "7ff204866ab0c5436a34f71be9a9b44635fbf8d40600f7196e9e9b357b9e9e40",
+      "size_bytes": 6437
+    },
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/transfer/TRANSFER_MANIFEST.json",
+      "repository_relative_path": "transfer/TRANSFER_MANIFEST.json",
+      "required": true,
+      "sha256": "5b92feb0734f007c429b4cde3e5a68134201d037ead5bb316bd5f424ec2b51f9",
+      "size_bytes": 14763
+    },
+    {
+      "absolute_path": "/teamspace/studios/this_studio/community-evolution-modeling/transfer/pyproject.embeddings-only.toml",
+      "repository_relative_path": "transfer/pyproject.embeddings-only.toml",
+      "required": true,
+      "sha256": "6feb27a3f4804b0a8b1975e6640e2afec0078c21212c2f2591f3b45c2386ab7e",
+      "size_bytes": 1116
+    }
+  ],
+  "schema_version": "tdmec-embedding-code-transfer-manifest-v1",
+  "status_labels": [
+    "IMPLEMENTED_NOT_EXECUTED",
+    "TRANSFER_PENDING_VALIDATION",
+    "TRANSFER_BUNDLE_READY"
+  ]
+}

@@ -1,0 +1,42 @@
+# Target Lightning Studio dependency specification for the TDMEC embedding stage.
+# Status: DEPENDENCY_SPEC_READY / IMPLEMENTED_NOT_EXECUTED / TRANSFER_PENDING_VALIDATION
+#
+# Do NOT install these packages in the authoring Studio under the current
+# no-execution restriction. Install only in the target Studio that will run
+# mock / Qwen preflight / bounded pilot commands.
+#
+# Python: >=3.10,<3.13 (3.11 recommended)
+# CUDA:   12.1 or 12.4 recommended with a matching PyTorch wheel
+# GPU:    >=24 GB VRAM recommended for Qwen3-Embedding-4B; 16 GB possible with small batches
+# RAM:    >=32 GB system RAM recommended (64 GB preferred for stratified 10k pilot scans)
+# Disk:   >=50 GB free for code + HF cache + bounded embedding outputs;
+#         full-eligible-population estimates are reported by the pilot and are much larger.
+
+# Core scientific I/O (also declared in pyproject.toml)
+numpy>=1.26,<2.3
+pandas>=2.2,<2.3
+pyarrow>=15.0,<20
+PyYAML>=6.0,<7
+
+# Embedding / Hugging Face stack
+# Install a CUDA-matched torch wheel from https://pytorch.org before transformers if needed.
+torch>=2.2,<2.7
+transformers>=4.51,<5
+accelerate>=0.33,<2
+tokenizers>=0.19,<0.22
+safetensors>=0.4,<0.6
+huggingface_hub>=0.24,<0.30
+
+# Runtime / memory monitoring
+psutil>=5.9,<7
+
+# Testing
+pytest>=8.0,<9
+
+# Notes:
+# - Prefer `pip install -e ".[embeddings,test]"` from the repository root after extracting
+#   the transfer bundle, then overlay this constraint file if desired:
+#     pip install -r requirements/embeddings-target-studio.txt
+# - Set HF_HOME / HUGGINGFACE_HUB_CACHE to persistent Teamspace storage.
+# - Never commit HF tokens. Prefer `huggingface-cli login` or HF_TOKEN in the Studio secret store.
+# - Offline mode: set local_files_only=true in the encoder config after weights are cached.

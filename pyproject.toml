@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "tdmec-discovery"
 version = "0.1.0"
-description = "Read-only data-access verification, Phase 1 TDMEC contracts/schemas, and Phase 2 privacy-safe diagnostics."
+description = "Read-only data-access verification, Phase 1 TDMEC contracts/schemas, Phase 2 privacy-safe diagnostics, and transferable embedding-stage code."
 requires-python = ">=3.10"
 dependencies = [
     "pandas>=2.2",
@@ -24,16 +24,35 @@ drive = [
     "google-auth-httplib2>=0.2",
 ]
 test = ["pytest>=8.0"]
+# Target-Studio embedding stack. Do not install in the authoring Studio under the
+# no-execution / no-model-download restriction. Pin/constraint file:
+# requirements/embeddings-target-studio.txt
+embeddings = [
+    "torch>=2.2,<2.7",
+    "transformers>=4.51,<5",
+    "accelerate>=0.33,<2",
+    "tokenizers>=0.19,<0.22",
+    "safetensors>=0.4,<0.6",
+    "huggingface_hub>=0.24,<0.30",
+    "psutil>=5.9,<7",
+]
 
 [project.scripts]
 tdmec-discovery = "tdmec_discovery.cli:main"
 tdmec-diagnostics = "tdmec_diagnostics.cli:main"
+tdmec-embeddings-pilot = "tdmec_embeddings.cli:main"
+tdmec-embedding-files = "tdmec_embeddings.file_cli:main"
+tdmec-embedding-pilot-run = "tdmec_embeddings.run_pilot_embedding:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["tdmec*", "tdmec_discovery*", "tdmec_pilot*", "tdmec_diagnostics*"]
-# Note: the tdmec* pattern already matches tdmec_discovery, tdmec_pilot, and
-# tdmec_diagnostics; explicit entries are retained for clarity.
+include = [
+    "tdmec*",
+    "tdmec_discovery*",
+    "tdmec_pilot*",
+    "tdmec_diagnostics*",
+    "tdmec_embeddings*",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

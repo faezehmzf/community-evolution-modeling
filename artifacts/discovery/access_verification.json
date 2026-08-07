@@ -1,0 +1,31 @@
+{
+  "verified_at": "2026-07-24T14:36:41.044391+00:00",
+  "datasets": {
+    "A": {
+      "configured": true,
+      "visible_file_count": 13,
+      "xlsx_count": 12,
+      "representative_file": "core_army_pro_fans_tweets_part_012.xlsx",
+      "downloaded_size": 274061016,
+      "is_zip_xlsx": true,
+      "parsed_ok": true,
+      "sheet_names": [
+        "tweets"
+      ],
+      "access_confirmed": true
+    },
+    "B": {
+      "configured": true,
+      "visible_file_count": 71,
+      "xlsx_count": 70,
+      "representative_file": "statuses-68.xlsx",
+      "downloaded_size": 109030187,
+      "is_zip_xlsx": true,
+      "parsed_ok": true,
+      "sheet_names": [
+        "Sheet1"
+      ],
+      "access_confirmed": true
+    }
+  }
+}

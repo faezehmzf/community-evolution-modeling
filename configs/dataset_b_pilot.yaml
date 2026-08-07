@@ -1,0 +1,71 @@
+# Dataset B controlled preprocessing pilot configuration.
+#
+# The config *hash* (over the "canonical" block below) is embedded in the run id
+# and guards resume: a run may only resume under an identical canonical config.
+# Paths, source location, and runtime knobs are intentionally EXCLUDED from the
+# canonical hash so that moving the output root or source between Lightning AI
+# Studio / Linux hosts does not invalidate a resume.
+
+pilot_name: dataset_b_controlled_pilot
+config_version: 1
+
+# ---- Canonical, hash-affecting decisions (authoritative) -------------------
+canonical:
+  frozen_node_count: 16736
+  valid_node_index_min: 0
+  valid_node_index_max: 16735
+  account_join_key: user.id
+  tweet_id_type: string          # exact strings, never float
+  snapshot_frequency: quarterly
+  snapshot_start: 2017-Q4        # -> snapshot_id 0
+  snapshot_end: 2026-Q2          # -> snapshot_id 34
+  snapshot_count: 35
+  node_universe_expansion: forbidden
+  raw_source_modification: forbidden
+  # Conservative text normalization only (no destructive cleaning).
+  text_normalization:
+    unicode_form: NFC
+    normalize_newlines: true
+    strip_bom: true
+    # everything below MUST remain false for this pilot
+    remove_mentions: false
+    remove_hashtags: false
+    remove_urls: false
+    remove_emojis: false
+    remove_punctuation: false
+    remove_stopwords: false
+    stemming: false
+    lemmatization: false
+    translation: false
+  # Duplicate policy
+  duplicate_key: tweet_id        # exact string
+  duplicate_action: annotate     # never silently drop; report + mark canonical
+
+# ---- Pilot inputs (fixed for this task) ------------------------------------
+input_files:
+  - statuses-2.xlsx
+  - statuses-69.xlsx
+expected_sheet: Sheet1
+expected_columns:
+  - id
+  - created_at
+  - user
+  - text
+  - likes
+  - retweets
+  - reply_count
+  - quoted_count
+  - bookmarks
+  - views
+
+# ---- Runtime / paths (NOT part of canonical hash) --------------------------
+runtime:
+  chunk_size: 200000             # rows per chunk (checkpoint granularity)
+  # Node index map (author_account_id -> node_index) produced during discovery.
+  # Provide via CLI/env; Lightning AI Studio example:
+  node_index_map_path: null      # e.g. /teamspace/studios/this_studio/TDMEC_PROJECT_OUTPUTS/manifests/node_index_map.parquet
+  # Output root (persistent Studio directory).
+  output_root: ./artifacts/pilot # e.g. /teamspace/studios/this_studio/TDMEC_PROJECT_OUTPUTS
+  cache_root: /tmp/tdmec_cache
+  # Dataset B source (prefer local:... in Studio; gdrive-* adapters remain optional).
+  dataset_b_source: null

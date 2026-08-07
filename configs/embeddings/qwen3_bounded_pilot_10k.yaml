@@ -1,0 +1,54 @@
+# IMPLEMENTED_NOT_EXECUTED / TRANSFER_PENDING_VALIDATION
+# Qwen3 10,000+10,000 bounded pilot template.
+# Requires BOTH:
+#   --authorize-real-model
+#   --authorize-bounded-pilot
+# Never continues automatically to the full eligible population.
+#
+# Before any real run in the target Studio pin immutable revisions:
+#   export QWEN3_MODEL_REVISION=<immutable-commit-or-snapshot-sha>
+#   export QWEN3_TOKENIZER_REVISION=<immutable-commit-or-snapshot-sha>
+schema_version: tdmec-embedding-run-config-v1
+execution_mode: qwen_bounded_pilot
+embedding_run_id: qwen3_pilot_10k_001
+output_root: ${TDMEC_EMBEDDING_OUTPUT_ROOT}
+force: false
+resume: false
+dry_run: false
+input_batch_size: 256
+output_shard_size: 512
+max_node_rows: 10000
+max_event_rows: 10000
+node_source:
+  artifact_root: ${TDMEC_DATASET_B_ROOT}
+  run_id: smoke_b_pg_001
+event_source:
+  artifact_root: ${TDMEC_DATASET_A_ROOT}
+  run_id: smoke_a_pg_001
+encoder:
+  backend: qwen3
+  model_name: Qwen/Qwen3-Embedding-4B
+  model_revision: ${QWEN3_MODEL_REVISION}
+  tokenizer_revision: ${QWEN3_TOKENIZER_REVISION}
+  instruction: >-
+    Represent the topic, stance, sentiment, and social meaning of this
+    social-media post for temporal community analysis.
+  output_dimension: 2560
+  max_length: 512
+  precision: auto
+  device: cuda:0
+  batch_size: 8
+  max_oom_retries: 4
+  local_files_only: false
+  allow_cpu: false
+  attn_implementation: null
+  enable_provisional_mrl_truncation: false
+sampling:
+  strategy: deterministic_stratified_hash
+  seed: 20260804
+  node_hash_buckets: 64
+  short_text_max_chars: 64
+  medium_text_max_chars: 256
+pooling:
+  final_normalization: none
+  delta_batch_rows: 4096

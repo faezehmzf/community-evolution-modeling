@@ -1,0 +1,58 @@
+# Alias → configs/embeddings/qwen3_tdmec_smoke_64.yaml
+schema_version: tdmec-embedding-run-config-v1
+execution_mode: qwen_preflight
+embedding_run_id: qwen3_tdmec_smoke_64_001
+output_root: ${TDMEC_EMBEDDING_OUTPUT_ROOT}
+force: false
+resume: false
+replace_incomplete: false
+dry_run: false
+input_batch_size: 64
+output_shard_size: 64
+max_node_rows: 64
+max_event_rows: 64
+node_source:
+  artifact_root: ${TDMEC_DATASET_B_ROOT}
+  run_id: smoke_b_pg_001
+event_source:
+  artifact_root: ${TDMEC_DATASET_A_ROOT}
+  run_id: smoke_a_pg_001
+encoder:
+  backend: qwen3
+  model_name: Qwen/Qwen3-Embedding-4B
+  model_revision: 5cf2132abc99cad020ac570b19d031efec650f2b
+  tokenizer_revision: 5cf2132abc99cad020ac570b19d031efec650f2b
+  instruction: >-
+    Represent the topic, stance, sentiment, and social meaning of this
+    social-media post for temporal community analysis.
+  output_dimension: 512
+  max_length: 512
+  precision: auto
+  device: cuda:0
+  batch_size: 4
+  max_oom_retries: 4
+  local_files_only: false
+  allow_cpu: false
+  attn_implementation: null
+  enable_provisional_mrl_truncation: true
+  normalize: true
+  normalized_atol: 1.0e-6
+sampling:
+  strategy: deterministic_stratified_hash
+  seed: 20260804
+  node_hash_buckets: 64
+  short_text_max_chars: 64
+  medium_text_max_chars: 256
+  force_relation_coverage: true
+pooling:
+  final_normalization: none
+  delta_batch_rows: 4096
+validation:
+  normalized_atol: 1.0e-6
+  require_finite: true
+  require_relation_coverage: true
+  expected_relation_ids: [0, 1, 2, 3]
+export:
+  package_name: TDMEC_INPUT
+  include_unit_embeddings: false
+  include_graph_edges: true

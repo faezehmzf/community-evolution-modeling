@@ -1,0 +1,39 @@
+# TDMEC Phase 2 diagnostics configuration (provisional / diagnostic-only)
+# Copy and adjust source schemes for authorized real-data runs.
+# Do not embed secrets, credentials, or private absolute paths in git-tracked files.
+
+schema_version: tdmec-phase2-diagnostics-v1
+
+# Provisional calendar bounds (QCAL-B01-PROC) — NOT certified
+provisional_start_label: "2017-Q4"
+provisional_end_label: "2026-Q2"
+keep_internal_empty_quarters: true
+timezone_assumption: UTC
+boundary_convention: start_inclusive_end_exclusive
+snapshot_frequency: quarterly
+
+# Streaming / resume (engineering knobs; excluded from scientific config hash)
+chunk_size: 10000
+enable_checkpoint: true
+resume_mode: resume   # resume | restart
+
+# Text-length diagnostics
+quantiles: [0.5, 0.9, 0.95, 0.99, 0.999]
+candidate_max_lengths: [128, 256, 512, 1024, 2048]
+# Tokenizer model downloads are forbidden in Phase 2.
+enable_tokenizer_diagnostics: false
+
+relations: [mention, retweet, reply, quote]
+
+# Adapters (documented schemas only)
+dataset_a_adapter_id: dataset_a_xlsx_v1
+dataset_b_adapter_id: dataset_b_xlsx_v1
+source_format: xlsx
+
+# Source scheme labels only (local | gdrive-anon | gdrive-api | synthetic | unset)
+# Actual source URIs are supplied via CLI flags / environment at runtime.
+dataset_a_source_scheme: unset
+dataset_b_source_scheme: unset
+
+# node_universe_size: leave null for production N=16736; synthetic runs override
+# node_universe_size: null

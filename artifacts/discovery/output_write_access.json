@@ -1,0 +1,7 @@
+{
+  "checked_at": "2026-07-24T15:07:44.343537+00:00",
+  "credentials_available": false,
+  "write_access_confirmed": false,
+  "steps": {},
+  "reason": "no Google Drive credentials in environment"
+}

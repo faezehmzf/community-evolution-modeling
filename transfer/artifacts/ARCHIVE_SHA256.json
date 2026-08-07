@@ -1,0 +1,11 @@
+{
+  "archive_path": "/teamspace/studios/this_studio/community-evolution-modeling/transfer/artifacts/tdmec_embedding_code_transfer_20260804.tar.gz",
+  "archive_name": "tdmec_embedding_code_transfer_20260804.tar.gz",
+  "size_bytes": 70385,
+  "sha256": "ca248bb693b4c6876e17d20d2b678c1e4b11802320db824fb398aace25859602",
+  "status_labels": [
+    "TRANSFER_BUNDLE_READY",
+    "IMPLEMENTED_NOT_EXECUTED",
+    "TRANSFER_PENDING_VALIDATION"
+  ]
+}

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "tdmec-discovery"
 version = "0.1.0"
-description = "Read-only data-access verification, Phase 1 TDMEC contracts/schemas, Phase 2 privacy-safe diagnostics, and transferable embedding-stage code."
+description = "Read-only data-access verification, Phase 1 TDMEC contracts/schemas, Phase 2 privacy-safe diagnostics, Dataset A graph builders, and transferable embedding-stage code."
 requires-python = ">=3.10"
 dependencies = [
     "pandas>=2.2",
@@ -24,6 +24,11 @@ drive = [
     "google-auth-httplib2>=0.2",
 ]
 test = ["pytest>=8.0"]
+# Optional Postgres + AGE + pgvector (Dataset A graph AGE sync / DB pilots).
+db = [
+    "psycopg[binary]>=3.1",
+    "pgvector>=0.3",
+]
 # Target-Studio embedding stack. Do not install in the authoring Studio under the
 # no-execution / no-model-download restriction. Pin/constraint file:
 # requirements/embeddings-target-studio.txt
@@ -40,9 +45,12 @@ embeddings = [
 [project.scripts]
 tdmec-discovery = "tdmec_discovery.cli:main"
 tdmec-diagnostics = "tdmec_diagnostics.cli:main"
+tdmec-graph = "tdmec_graph.cli:main"
+tdmec-db-migrate = "tdmec_db.migrate:main"
 tdmec-embeddings-pilot = "tdmec_embeddings.cli:main"
 tdmec-embedding-files = "tdmec_embeddings.file_cli:main"
 tdmec-embedding-pilot-run = "tdmec_embeddings.run_pilot_embedding:main"
+tdmec-assemble-smoke-e2e = "tdmec_embeddings.assemble_tdmec_input:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -52,7 +60,12 @@ include = [
     "tdmec_pilot*",
     "tdmec_diagnostics*",
     "tdmec_embeddings*",
+    "tdmec_graph*",
+    "tdmec_db*",
 ]
+
+[tool.setuptools.package-data]
+tdmec_db = ["schema.sql", "*.sql"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

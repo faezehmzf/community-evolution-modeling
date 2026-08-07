@@ -1,0 +1,48 @@
+# TDMEC-Full smoke training — PROVISIONAL_SMOKE_ONLY
+# Primary method on TDMEC_INPUT_smoke_e2e (mock D_text=16)
+
+package_root: /teamspace/studios/this_studio/TDMEC_PROJECT_OUTPUTS/tdmec_input/TDMEC_INPUT_smoke_e2e
+output_root: /teamspace/studios/this_studio/TDMEC_PROJECT_OUTPUTS/models/tdmec_full_smoke_001
+
+variant: TDMEC-Full
+status_labels:
+  - PROVISIONAL_SMOKE_ONLY
+  - ENGINEERING_VALIDATION
+  - NOT_FOR_FINAL_THESIS_CONCLUSIONS
+
+model:
+  d_h: 64
+  k_communities: 10
+  d_rel: 16
+  d_text: 16   # overridden from package meta at runtime if present
+  d_sem: 64
+  alpha: 1.0
+  num_layers: 1
+  fanout: [15]
+  f_struct: 17
+  dropout: 0.0
+  bptt_window: 3
+
+train:
+  seed: 42
+  epochs: 1
+  lr: 0.0005
+  weight_decay: 0.0001
+  grad_clip: 1.0
+  mask_rate: 0.15
+  num_negatives: 3
+  train_snapshot_ids: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+  val_snapshot_ids: [24, 25, 26, 27, 28]
+  test_snapshot_ids: [29, 30, 31, 32, 33, 34]
+  lambda_struct: 1.0
+  lambda_sem: 1.0
+  lambda_clu: 1.0
+  lambda_reg: 0.1
+  lambda_temp: 0.0
+  reg_margin: 1.0
+  device: cpu
+
+notes: >
+  TDMEC-Full smoke uses mock pooled text (D_text=16). Swap package text_embeddings/
+  for smoke-64 / pilot tensors without changing trainer layout.
+  NOT_FOR_FINAL_THESIS_CONCLUSIONS.

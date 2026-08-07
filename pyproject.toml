@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "tdmec-discovery"
 version = "0.1.0"
-description = "Read-only data-access verification, Phase 1 TDMEC contracts/schemas, Phase 2 privacy-safe diagnostics, Dataset A graph builders, and transferable embedding-stage code."
+description = "Read-only data-access verification, Phase 1 TDMEC contracts/schemas, Phase 2 privacy-safe diagnostics, Dataset A graph builders, embedding-stage code, and TDMEC model scaffolding."
 requires-python = ">=3.10"
 dependencies = [
     "pandas>=2.2",
@@ -29,6 +29,10 @@ db = [
     "psycopg[binary]>=3.1",
     "pgvector>=0.3",
 ]
+# Model training (TDMEC-G / Full). Prefer the Studio torch install when present.
+model = [
+    "torch>=2.2",
+]
 # Target-Studio embedding stack. Do not install in the authoring Studio under the
 # no-execution / no-model-download restriction. Pin/constraint file:
 # requirements/embeddings-target-studio.txt
@@ -51,6 +55,8 @@ tdmec-embeddings-pilot = "tdmec_embeddings.cli:main"
 tdmec-embedding-files = "tdmec_embeddings.file_cli:main"
 tdmec-embedding-pilot-run = "tdmec_embeddings.run_pilot_embedding:main"
 tdmec-assemble-smoke-e2e = "tdmec_embeddings.assemble_tdmec_input:main"
+tdmec-train-g = "tdmec_model.train_g:main"
+tdmec-train-full = "tdmec_model.train_full:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -62,6 +68,7 @@ include = [
     "tdmec_embeddings*",
     "tdmec_graph*",
     "tdmec_db*",
+    "tdmec_model*",
 ]
 
 [tool.setuptools.package-data]

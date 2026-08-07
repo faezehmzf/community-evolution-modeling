@@ -291,7 +291,7 @@ pip install -r requirements/embeddings-target-studio.txt
 
 # If transformers/torch conflict, install embedding stack explicitly after checking versions:
 # pip install "transformers>=4.51,<5" "accelerate>=0.33,<2" "tokenizers>=0.19,<0.22" \
-#   "safetensors>=0.4,<0.6" "huggingface_hub>=0.24,<0.30" "psutil>=5.9,<7"
+#   "safetensors>=0.4,<0.6" "huggingface_hub>=0.30,<1" "psutil>=5.9,<7"
 
 python - <<'PY'
 import torch, transformers

@@ -1,0 +1,41 @@
+# Dataset A provisional graph builder (T04/T06).
+# Canonical block is hashed for resume guards. Paths are runtime-only.
+
+graph_name: dataset_a_graph_provisional
+config_version: 1
+
+canonical:
+  frozen_node_count: 16736
+  valid_node_index_min: 0
+  valid_node_index_max: 16735
+  account_join_key: user.id
+  snapshot_frequency: quarterly
+  snapshot_start: 2017-Q4
+  snapshot_end: 2026-Q2
+  snapshot_count: 35
+  node_universe_expansion: forbidden
+  raw_source_modification: forbidden
+  allow_self_loops: false
+  relation_order: [mention, retweet, reply, quote]
+  weight_transform: log1p
+  f_struct: 17
+  calendar_status: PROVISIONAL
+  dedup_status: PROVISIONAL
+  cleaned_text_policy: nfc_normalized_v1
+  # Composite Layer-1 signature fields (float tweet id forbidden).
+  dedup_signature_fields:
+    - author_account_id
+    - created_at_utc
+    - text_hash
+    - relation_id
+    - target_account_id
+  certification_status: UNVALIDATED
+
+expected_sheet: tweets
+
+runtime:
+  chunk_size: 100000
+  output_root: null
+  cache_root: /tmp/tdmec_cache
+  dataset_a_source: null
+  node_index_map_path: null

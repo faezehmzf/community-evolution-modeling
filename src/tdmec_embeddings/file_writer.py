@@ -221,8 +221,11 @@ class FileEmbeddingWriter:
         self,
         output_namespace: str | Path,
         spec: FileEmbeddingRunSpec,
+        *,
+        repair_corrupt_shards: bool = False,
     ) -> None:
         self.spec = spec
+        self.repair_corrupt_shards = bool(repair_corrupt_shards)
         self.run_root = Path(output_namespace).resolve() / spec.embedding_run_id
         if self.run_root == spec.source.artifact_root:
             raise ValueError("embedding output must not overwrite its source artifact root")
@@ -260,8 +263,12 @@ class FileEmbeddingWriter:
             self._validate_checkpoint_identity()
         elif not hasattr(self, "_checkpoint"):
             self._checkpoint = self._new_checkpoint()
+        self._quarantine_stale_temporary_files()
         self._recover_orphan_shards()
-        self._validate_all_committed()
+        if self.repair_corrupt_shards:
+            self._repair_invalid_committed()
+        else:
+            self._validate_all_committed()
         self._flush_state()
 
     def _ensure_layout(self) -> None:
@@ -370,6 +377,37 @@ class FileEmbeddingWriter:
         row_count = int(embedded.get("row_count", -1))
         if row_count < 0 or parquet.metadata.num_rows != row_count:
             raise FileEmbeddingWriterError("embedding shard row accounting failed")
+        table = pq.read_table(
+            shard_path,
+            columns=["unit_hash", "content_hash", "preprocessing_hash", "embedding"],
+        )
+        dimension = int(embedded.get("dimension", -1))
+        vectors = np.asarray(table["embedding"].to_pylist(), dtype=np.float32)
+        if vectors.shape != (row_count, dimension):
+            raise FileEmbeddingWriterError("orphan shard vector shape is invalid")
+        if _vector_sha256(vectors) != embedded.get("vector_sha256"):
+            raise FileEmbeddingWriterError("orphan shard vector checksum mismatch")
+        reconstructed_input_hash = hash_canonical(
+            {
+                "modality": self.spec.modality,
+                "source_batch_index": int(embedded["source_batch_index"]),
+                "source_global_row_offset": int(embedded["source_global_row_offset"]),
+                "ordered_units": [
+                    {
+                        "unit_hash": unit_hash,
+                        "content_hash": content_hash,
+                        "preprocessing_hash": preprocessing_hash,
+                    }
+                    for unit_hash, content_hash, preprocessing_hash in zip(
+                        table["unit_hash"].to_pylist(),
+                        table["content_hash"].to_pylist(),
+                        table["preprocessing_hash"].to_pylist(),
+                    )
+                ],
+            }
+        )
+        if reconstructed_input_hash != embedded.get("batch_input_hash"):
+            raise FileEmbeddingWriterError("orphan shard input checksum mismatch")
         sidecar_path = self._sidecar_path(shard_path)
         sidecar = dict(embedded)
         sidecar["shard_relative_path"] = self._relative(shard_path)
@@ -390,6 +428,44 @@ class FileEmbeddingWriter:
             "norm_max": embedded.get("norm_max"),
         }
 
+    def _quarantine_path(self, path: Path, *, reason: str) -> Path:
+        quarantine = self.run_root / "quarantine" / self.spec.modality / reason
+        quarantine.mkdir(parents=True, exist_ok=True)
+        target = quarantine / path.name
+        suffix = 1
+        while target.exists():
+            target = quarantine / f"{path.name}.{suffix}"
+            suffix += 1
+        os.replace(path, target)
+        return target
+
+    def _quarantine_stale_temporary_files(self) -> None:
+        if not self.repair_corrupt_shards:
+            return
+        for path in sorted(self.run_root.rglob("*.tmp")):
+            if path.is_file():
+                self._quarantine_path(path, reason="stale_temporary")
+
+    def _repair_invalid_committed(self) -> None:
+        if self._checkpoint.get("status") == "COMPLETED":
+            self._validate_all_committed()
+            return
+        removed = []
+        for key, entry in sorted(list(self._checkpoint["batches"].items())):
+            try:
+                self._validate_entry(key, entry)
+            except FileEmbeddingWriterError:
+                for field in ("shard_relative_path", "metadata_relative_path"):
+                    relative = entry.get(field)
+                    if isinstance(relative, str):
+                        path = self.run_root / relative
+                        if path.is_file():
+                            self._quarantine_path(path, reason="corrupt_committed")
+                del self._checkpoint["batches"][key]
+                removed.append(key)
+        if removed:
+            self._recount()
+
     def _recover_orphan_shards(self) -> None:
         batches = self._checkpoint["batches"]
         referenced = {
@@ -400,7 +476,16 @@ class FileEmbeddingWriter:
             relative = self._relative(shard_path)
             if relative in referenced:
                 continue
-            entry = self._entry_from_shard(shard_path)
+            try:
+                entry = self._entry_from_shard(shard_path)
+            except FileEmbeddingWriterError:
+                if not self.repair_corrupt_shards or self._checkpoint.get("status") == "COMPLETED":
+                    raise
+                sidecar = self._sidecar_path(shard_path)
+                self._quarantine_path(shard_path, reason="corrupt_orphan")
+                if sidecar.is_file():
+                    self._quarantine_path(sidecar, reason="corrupt_orphan")
+                continue
             key = entry["batch_key"]
             if key in batches:
                 raise FileEmbeddingWriterError(

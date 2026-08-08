@@ -1,3 +1,8 @@
+> **Superseded for execution:** do not run the monolithic dependency/pilot cells below.
+> Use `12_kaggle_embedding_recovery_runbook.md`, which pins Transformers 4.55.4,
+> requires a model-only preflight, and uses bounded resumable shard jobs. This file is
+> retained as historical design context only.
+
 # Kaggle GPU Runbook — TDMEC Embedding Stage (Preflight + Bounded Pilot)
 
 **Status:** `TARGET_KAGGLE_RUNBOOK_READY` · provisional engineering path  

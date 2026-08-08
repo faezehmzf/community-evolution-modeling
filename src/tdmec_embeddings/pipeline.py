@@ -10,6 +10,7 @@ from typing import Any, Dict, Iterator, Optional, Sequence
 
 from tdmec.hashing import hash_canonical, sha256_file
 
+from .alignment import compute_edge_order_fingerprint_from_root
 from .config import EmbeddingRunConfig
 from .eligibility import (
     EligibilityBatch,
@@ -27,6 +28,8 @@ from .file_writer import (
 )
 from .implementation_status import IMPLEMENTATION_STATUS_LABELS
 from .mock_encoder import DeterministicMockEncoder, TextEncoder
+from .model_preflight import ModelPreflightError, verify_preflight_report
+from .observability import dependency_versions, git_commit_sha, log_event, resource_snapshot, utc_timestamp
 from .pooling import PoolingSpec, StreamingEmbeddingPooler
 from .qwen_encoder import Qwen3Encoder
 from .run_recovery import RunRecoveryError, prepare_embedding_run_root
@@ -151,12 +154,37 @@ def _write_modality(
         if not config.resume:
             raise EmbeddingPipelineError("completed unit outputs exist and resume is disabled")
         return json.loads(writer.manifest_path.read_text(encoding="utf-8"))
-    for batch in _chunks(units, config.output_shard_size, modality):
+    batches = tuple(_chunks(units, config.output_shard_size, modality))
+    for ordinal, batch in enumerate(batches, start=1):
         if writer.is_batch_committed(batch):
+            log_event(
+                "input_shard_skipped_validated",
+                modality=modality,
+                current_shard=ordinal,
+                total_shards=len(batches),
+                processed_rows=batch.num_rows,
+            )
             continue
+        log_event(
+            "input_shard_started",
+            modality=modality,
+            current_shard=ordinal,
+            total_shards=len(batches),
+            eligible_texts=batch.num_rows,
+        )
         vectors = encoder.encode(batch.units)
-        writer.write_batch(batch, vectors)
-    return writer.complete(expected_rows=len(units))
+        commit = writer.write_batch(batch, vectors)
+        log_event(
+            "checkpoint_write_completed",
+            modality=modality,
+            batch_key=commit.batch_key,
+            processed_rows=commit.row_count,
+            checksum=commit.shard_sha256,
+            total_committed_rows=commit.total_committed_rows,
+        )
+    manifest = writer.complete(expected_rows=len(units))
+    log_event("modality_embedding_completed", modality=modality, rows=len(units))
+    return manifest
 
 
 def _source_preflight(config: EmbeddingRunConfig) -> Dict[str, Any]:
@@ -215,6 +243,7 @@ def run_embedding_pipeline(
     *,
     authorize_real_model: bool = False,
     authorize_bounded_pilot: bool = False,
+    preflight_report_path: Optional[str | Path] = None,
 ) -> Dict[str, Any]:
     """Execute only when explicitly invoked in the target Studio."""
 
@@ -231,6 +260,15 @@ def run_embedding_pipeline(
         authorize_real_model and authorize_bounded_pilot
     ):
         raise EmbeddingPipelineError("bounded Qwen pilot requires both authorization flags")
+    if config.execution_mode != "mock":
+        if preflight_report_path is None:
+            raise EmbeddingPipelineError(
+                "a compatible PASSED model-only preflight report is required"
+            )
+        try:
+            verify_preflight_report(preflight_report_path, config)
+        except ModelPreflightError as exc:
+            raise EmbeddingPipelineError(f"model preflight gate failed: {exc}") from exc
     if config.execution_mode == "qwen_bounded_pilot" and (
         config.max_node_rows > 10_000 or config.max_event_rows > 10_000
     ):
@@ -272,6 +310,32 @@ def run_embedding_pipeline(
 
     node_source = _node_processor(config, full_scan=False).reader.identity
     event_source = _event_processor(config, full_scan=False).reader.identity
+    try:
+        import torch
+    except ImportError:
+        torch = None
+    execution_provenance = {
+        "schema_version": "tdmec-embedding-execution-manifest-v1",
+        "created_at": utc_timestamp(),
+        "git_commit": git_commit_sha(),
+        "configuration_hash": config.scientific_hash(),
+        "dependency_versions": dependency_versions(),
+        "model_name": config.encoder.model_name,
+        "model_revision": config.encoder.model_revision,
+        "tokenizer_revision": config.encoder.tokenizer_revision,
+        "resources": resource_snapshot(torch_module=torch),
+        "input_fingerprints": {
+            "node_text": node_source.provenance(),
+            "event_text": event_source.provenance(),
+        },
+        "event_alignment_fingerprint": compute_edge_order_fingerprint_from_root(
+            config.event_source.resolved_root(),
+            expected_run_id=config.event_source.run_id,
+            batch_size=config.input_batch_size,
+            verify_checksums=False,
+        ),
+    }
+    _atomic_write_json(run_root / "execution_manifest.json", execution_provenance)
     node_manifest = _write_modality(
         config,
         modality="node_text",
@@ -288,7 +352,27 @@ def run_embedding_pipeline(
         encoder=encoder,
         source=event_source,
     )
+    completed_modalities = {}
+    for name in ("node_text", "event_text"):
+        checkpoint_path = run_root / "checkpoints" / f"{name}.json"
+        checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+        completed_modalities[name] = {
+            "status": checkpoint.get("status"),
+            "committed_rows": int(checkpoint.get("committed_rows", 0)),
+            "batches": checkpoint.get("batches") or {},
+        }
+    _atomic_write_json(
+        run_root / "completed_shards.json",
+        {
+            "schema_version": "tdmec-completed-shards-v1",
+            "updated_at": utc_timestamp(),
+            "modalities": completed_modalities,
+            "checksum_policy": "sha256_parquet_and_metadata_sidecar_verified_on_resume",
+            "atomic_publish": "temporary_file_fsync_then_os_replace",
+        },
+    )
 
+    log_event("pooling_started", modality="node_text")
     node_pool = StreamingEmbeddingPooler(
         run_root,
         PoolingSpec(
@@ -303,12 +387,14 @@ def run_embedding_pipeline(
     )
     node_pool.prepare_deltas()
     node_pool_manifest = node_pool.finalize_node_snapshots()
+    log_event("pooling_completed", modality="node_text")
     edge_reader = CanonicalEdgeFileReader(
         config.event_source.resolved_root(),
         expected_run_id=config.event_source.run_id,
         batch_size=config.input_batch_size,
         identity=event_source,
     )
+    log_event("pooling_started", modality="event_text")
     event_pool = StreamingEmbeddingPooler(
         run_root,
         PoolingSpec(
@@ -323,6 +409,7 @@ def run_embedding_pipeline(
     )
     event_pool.prepare_deltas()
     event_pool_manifest = event_pool.finalize_canonical_edges(edge_reader)
+    log_event("pooling_completed", modality="event_text")
 
     runtime = encoder.runtime_report() if isinstance(encoder, Qwen3Encoder) else {
         "backend": "deterministic_mock",
@@ -381,6 +468,7 @@ def run_embedding_pipeline(
             "scale_estimates": "reports/scale_estimates.json",
         },
         "run_recovery": recovery,
+        "provenance": execution_provenance,
         "normalization": {
             "unit_normalized": True,
             "normalized_atol": float(config.encoder.normalized_atol),
@@ -397,6 +485,11 @@ def run_embedding_pipeline(
         if path.is_file() and path.name != "all_checksums.json"
     }
     _atomic_write_json(run_root / "all_checksums.json", checksums)
+    log_event(
+        "embedding_final_validation_completed",
+        status="COMPLETED",
+        checksum_file_count=len(checksums),
+    )
     return final_manifest
 
 

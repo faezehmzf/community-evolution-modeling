@@ -16,6 +16,7 @@ from .config import EmbeddingRunConfig
 from .export import ExportError, export_tdmec_input_package
 from .file_writer import _atomic_write_json
 from .implementation_status import IMPLEMENTATION_STATUS_LABELS
+from .observability import log_event
 from .pipeline import EmbeddingPipelineError, run_embedding_pipeline
 from .sampling import SamplingError
 from .validation import validate_pooled_embeddings, validate_tdmec_input_package
@@ -32,6 +33,7 @@ def run_tdmec_embedding_pilot(
     authorize_bounded_pilot: bool = False,
     skip_export: bool = False,
     package_root: Optional[str | Path] = None,
+    preflight_report_path: Optional[str | Path] = None,
 ) -> Dict[str, Any]:
     """Run the bounded pilot stack and optionally build ``TDMEC_INPUT``."""
 
@@ -40,6 +42,7 @@ def run_tdmec_embedding_pilot(
             config,
             authorize_real_model=authorize_real_model,
             authorize_bounded_pilot=authorize_bounded_pilot,
+            preflight_report_path=preflight_report_path,
         )
     except SamplingError as exc:
         raise PilotPipelineError(str(exc)) from exc
@@ -57,6 +60,7 @@ def run_tdmec_embedding_pilot(
     reports_dir = run_root / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
 
+    log_event("final_validation_started", validation="pooled_embeddings")
     embedding_validation = validate_pooled_embeddings(
         run_root / "pooled",
         expected_dimension=config.encoder.output_dimension,
@@ -69,7 +73,9 @@ def run_tdmec_embedding_pilot(
             "embedding validation failed: " + "; ".join(embedding_validation["failures"])
         )
 
+    log_event("final_validation_completed", validation="pooled_embeddings", passed=True)
     try:
+        log_event("final_validation_started", validation="graph_text_alignment")
         alignment = align_graph_and_text(
             embedding_run_root=run_root,
             graph_artifact_root=config.event_source.resolved_root(),
@@ -81,6 +87,7 @@ def run_tdmec_embedding_pilot(
     except AlignmentError as exc:
         raise PilotPipelineError(f"graph-text alignment failed: {exc}") from exc
 
+    log_event("final_validation_completed", validation="graph_text_alignment", passed=True)
     export_result: Optional[Dict[str, Any]] = None
     package_validation: Optional[Dict[str, Any]] = None
     if not skip_export:
@@ -130,6 +137,7 @@ def run_tdmec_embedding_pilot(
         "status_labels": list(IMPLEMENTATION_STATUS_LABELS),
     }
     _atomic_write_json(reports_dir / "pilot_final_report.json", final)
+    log_event("pilot_finalization_completed", status="COMPLETED")
     return final
 
 

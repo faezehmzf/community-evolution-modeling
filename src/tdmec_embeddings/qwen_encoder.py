@@ -19,10 +19,15 @@ download a model.  Norm validation failures raise ``EncoderError``.
 from __future__ import annotations
 
 import inspect
+import math
 import os
+import signal
+import threading
+from contextlib import contextmanager
 import platform
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
 
 import numpy as np
@@ -33,6 +38,13 @@ from .config import EncoderConfig
 from .eligibility import EligibleTextUnit, cleaned_text_content_hash
 from .implementation_status import IMPLEMENTATION_STATUS_LABELS
 from .mock_encoder import EncoderMetadata, EncoderError
+from .observability import (
+    Heartbeat,
+    dependency_versions,
+    log_event,
+    model_memory_report,
+    resource_snapshot,
+)
 
 
 class QwenEnvironmentError(EncoderError):
@@ -44,6 +56,31 @@ class QwenOutOfMemoryError(EncoderError):
 
 
 _HF_TOKEN_ENV_KEYS = ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN")
+
+
+@contextmanager
+def _loading_deadline(stage: str):
+    # Bound a blocking Hub/materialization stage on the Kaggle Unix worker.
+    seconds = int(os.environ.get("TDMEC_MODEL_LOAD_TIMEOUT_SECONDS", "900"))
+    if seconds <= 0:
+        raise QwenEnvironmentError("TDMEC_MODEL_LOAD_TIMEOUT_SECONDS must be positive")
+    if threading.current_thread() is not threading.main_thread() or not hasattr(signal, "SIGALRM"):
+        yield
+        return
+    previous = signal.getsignal(signal.SIGALRM)
+
+    def expired(_signum, _frame):
+        raise QwenEnvironmentError(
+            f"{stage} exceeded the configured {seconds}-second timeout"
+        )
+
+    signal.signal(signal.SIGALRM, expired)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
 
 
 def resolve_hf_token(*, require: bool = False) -> Optional[str]:
@@ -186,6 +223,9 @@ class Qwen3Encoder:
         self._inference_dtype_name: Optional[str] = None
         self._hf_token_provided: bool = False
         self._model_dtype_kwarg: Optional[str] = None
+        self._model_snapshot_path: Optional[str] = None
+        self._model_memory: Optional[Dict[str, Any]] = None
+        self._load_timings: Dict[str, float] = {}
 
     def _hub_auth_kwargs(self) -> Dict[str, Any]:
         """Authenticated Hub kwargs for tokenizer/model ``from_pretrained`` calls."""
@@ -230,38 +270,146 @@ class Qwen3Encoder:
     def load(self) -> None:
         if self._model is not None:
             return
+        # These must be set before importing either Hub or Transformers logging.
+        os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+        os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
         try:
             import torch
             import transformers
+            from huggingface_hub import snapshot_download
+            from huggingface_hub.utils import disable_progress_bars
+            from packaging.version import Version
             from transformers import AutoModel, AutoTokenizer
         except ImportError as exc:
             raise QwenEnvironmentError(
                 "target Studio lacks torch/transformers embedding dependencies"
             ) from exc
+        installed_transformers = Version(transformers.__version__)
+        if not Version("4.51.0") <= installed_transformers < Version("5.0.0"):
+            raise QwenEnvironmentError(
+                "Qwen loading requires the tested Transformers v4 range "
+                "(>=4.51,<5); install requirements/embeddings-target-studio.txt"
+            )
+        disable_progress_bars()
+        try:
+            transformers.utils.logging.disable_progress_bar()
+        except (AttributeError, TypeError):
+            pass
         device, dtype, dtype_name = self._resolve_device_and_dtype(torch)
-        auth_kwargs = self._hub_auth_kwargs()
+        attached_snapshot = os.environ.get("TDMEC_MODEL_SNAPSHOT_PATH", "").strip()
+        if attached_snapshot:
+            token = resolve_hf_token(require=False)
+            self._hf_token_provided = token is not None
+            auth_kwargs = {"token": token} if token is not None else {}
+        else:
+            auth_kwargs = self._hub_auth_kwargs()
         dtype_kwargs = model_dtype_load_kwargs(dtype)
         self._model_dtype_kwarg = next(iter(dtype_kwargs.keys()))
+        log_event(
+            "environment_initialized",
+            dependencies=dependency_versions(),
+            requested_device=str(device),
+            inference_dtype=dtype_name,
+            resources=resource_snapshot(torch_module=torch),
+        )
+
+        if self.config.tokenizer_revision != self.config.model_revision:
+            raise QwenEnvironmentError(
+                "the single-snapshot loader requires identical model/tokenizer revisions"
+            )
+        stage_started = time.perf_counter()
+        log_event(
+            "model_file_download_started",
+            model_name=self.config.model_name,
+            model_revision=self.config.model_revision,
+            local_files_only=bool(self.config.local_files_only),
+            attached_snapshot=bool(attached_snapshot),
+        )
+        if attached_snapshot:
+            snapshot_path = str(Path(attached_snapshot).expanduser().resolve())
+            marker = Path(snapshot_path) / "tdmec_model_revision.txt"
+            if not marker.is_file() or marker.read_text(encoding="utf-8").strip() != self.config.model_revision:
+                raise QwenEnvironmentError(
+                    "attached model snapshot lacks the matching tdmec_model_revision.txt"
+                )
+            if not (Path(snapshot_path) / "config.json").is_file():
+                raise QwenEnvironmentError("attached model snapshot has no config.json")
+        else:
+            with _loading_deadline("model file download"):
+                with Heartbeat("model_file_download", torch_module=torch):
+                    snapshot_path = snapshot_download(
+                        repo_id=self.config.model_name,
+                        revision=self.config.model_revision,
+                        local_files_only=self.config.local_files_only,
+                        token=auth_kwargs.get("token"),
+                    )
+        self._load_timings["model_file_download_seconds"] = time.perf_counter() - stage_started
+        self._model_snapshot_path = str(snapshot_path)
+        log_event(
+            "model_file_download_completed",
+            elapsed_seconds=self._load_timings["model_file_download_seconds"],
+        )
+
+        stage_started = time.perf_counter()
+        log_event("tokenizer_load_started", tokenizer_revision=self.config.tokenizer_revision)
         tokenizer = AutoTokenizer.from_pretrained(
-            self.config.model_name,
-            revision=self.config.tokenizer_revision,
+            snapshot_path,
             padding_side="left",
-            local_files_only=self.config.local_files_only,
+            local_files_only=True,
             trust_remote_code=False,
-            **auth_kwargs,
+        )
+        self._load_timings["tokenizer_load_seconds"] = time.perf_counter() - stage_started
+        log_event(
+            "tokenizer_load_completed",
+            elapsed_seconds=self._load_timings["tokenizer_load_seconds"],
+            tokenizer_class=type(tokenizer).__name__,
         )
         model_kwargs: Dict[str, Any] = {
-            "revision": self.config.model_revision,
-            "local_files_only": self.config.local_files_only,
+            "local_files_only": True,
             "trust_remote_code": False,
+            "low_cpu_mem_usage": True,
+            "device_map": {"": str(device)},
             **dtype_kwargs,
-            **auth_kwargs,
         }
         if self.config.attn_implementation:
             model_kwargs["attn_implementation"] = self.config.attn_implementation
-        model = AutoModel.from_pretrained(self.config.model_name, **model_kwargs)
+        stage_started = time.perf_counter()
+        log_event(
+            "model_materialization_started",
+            low_cpu_mem_usage=True,
+            device_map={"": str(device)},
+            cpu_offload=False,
+            disk_offload=False,
+            dtype_kwarg=self._model_dtype_kwarg,
+        )
+        with _loading_deadline("model materialization"):
+            with Heartbeat("model_materialization", torch_module=torch):
+                model = AutoModel.from_pretrained(snapshot_path, **model_kwargs)
+        self._load_timings["model_materialization_seconds"] = time.perf_counter() - stage_started
+        log_event(
+            "model_materialization_completed",
+            elapsed_seconds=self._load_timings["model_materialization_seconds"],
+        )
         model.eval()
-        model.to(device)
+        model.config.use_cache = False
+        self._model_memory = model_memory_report(model)
+        if self._model_memory["meta_parameter_tensors"]:
+            raise QwenEnvironmentError("model load left parameters on the meta device")
+        unexpected_devices = [
+            name
+            for name in self._model_memory["parameter_bytes_by_device"]
+            if name != str(device)
+        ]
+        if unexpected_devices:
+            raise QwenEnvironmentError(
+                f"model parameters were offloaded unexpectedly: {unexpected_devices}"
+            )
+        log_event(
+            "model_transfer_to_gpu_completed",
+            placement="direct_single_gpu_materialization",
+            model_memory=self._model_memory,
+            resources=resource_snapshot(torch_module=torch),
+        )
         native_dimension = int(model.config.hidden_size)
         if self.config.output_dimension > native_dimension:
             raise QwenEnvironmentError("requested dimension exceeds model hidden size")
@@ -280,6 +428,7 @@ class Qwen3Encoder:
         if device.type == "cuda":
             torch.cuda.reset_peak_memory_stats(device)
         self._transformers_version = transformers.__version__
+        log_event("model_ready", evaluation_mode=not bool(model.training))
 
     def _format(self, text: str) -> str:
         if not self.config.instruction:
@@ -408,6 +557,15 @@ class Qwen3Encoder:
         batch_size = min(self.config.batch_size, len(units))
         retries = 0
         started = time.perf_counter()
+        last_progress = started
+        total_batches = math.ceil(len(units) / batch_size)
+        completed_batches = 0
+        log_event(
+            "embedding_batch_sequence_started",
+            eligible_texts=len(units),
+            batch_size=batch_size,
+            total_batches=total_batches,
+        )
         try:
             while cursor < len(units):
                 current = units[cursor : cursor + batch_size]
@@ -415,6 +573,24 @@ class Qwen3Encoder:
                     outputs.append(self._encode_batch(current))
                     cursor += len(current)
                     retries = 0
+                    completed_batches += 1
+                    now = time.perf_counter()
+                    if completed_batches == total_batches or now - last_progress >= 60.0:
+                        elapsed = now - started
+                        rate = cursor / elapsed if elapsed else None
+                        remaining = len(units) - cursor
+                        log_event(
+                            "embedding_progress",
+                            current_batch=completed_batches,
+                            total_batches=total_batches,
+                            processed_rows=cursor,
+                            eligible_texts=len(units),
+                            rows_per_second=rate,
+                            elapsed_seconds=elapsed,
+                            eta_seconds=(remaining / rate) if rate else None,
+                            resources=resource_snapshot(torch_module=self._torch),
+                        )
+                        last_progress = now
                 except Exception as exc:
                     if not self._is_cuda_oom(exc):
                         raise
@@ -429,6 +605,11 @@ class Qwen3Encoder:
                     batch_size = max(1, batch_size // 2)
         finally:
             self.stats.elapsed_seconds += time.perf_counter() - started
+        log_event(
+            "embedding_batch_sequence_completed",
+            processed_rows=cursor,
+            elapsed_seconds=time.perf_counter() - started,
+        )
         return np.concatenate(outputs, axis=0)
 
     def runtime_report(self) -> Dict[str, Any]:
@@ -453,6 +634,14 @@ class Qwen3Encoder:
                 "huggingface_hub_cache_set": bool(
                     os.environ.get("HUGGINGFACE_HUB_CACHE", "").strip()
                 ),
+                "dependency_versions": dependency_versions(),
+                "model_load_timings": dict(self._load_timings),
+                "model_memory": self._model_memory,
+                "model_snapshot_resolved": self._model_snapshot_path is not None,
+                "attached_model_snapshot": bool(
+                    os.environ.get("TDMEC_MODEL_SNAPSHOT_PATH", "").strip()
+                ),
+                "load_strategy": "low_cpu_mem_single_explicit_gpu_no_offload",
             }
         )
         return report

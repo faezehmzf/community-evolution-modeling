@@ -1,5 +1,10 @@
 # TDMEC Embedding Pilot
 
+> **Kaggle execution update:** the former monolithic commands in this document are
+> historical. Use `docs/handoff/12_kaggle_embedding_recovery_runbook.md`; all real Qwen
+> runs now require `--preflight-report`, and the 10k+10k pilot must use staged shards.
+
+
 **Model:** TDMEC (Temporal Dynamic Multiplex Evolutionary Community model)  
 **Stage:** Bounded Qwen3 embedding pilot (typically 10 000 node + 10 000 event units)  
 **Status labels:** `PROVISIONAL_SMOKE_ONLY` · `ENGINEERING_VALIDATION` · `NOT_FOR_FINAL_THESIS_CONCLUSIONS`

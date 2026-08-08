@@ -29,13 +29,13 @@ encoder:
     social-media post for temporal community analysis.
   output_dimension: 512
   max_length: 512
-  precision: auto
+  precision: fp16
   device: cuda:0
   batch_size: 4
   max_oom_retries: 4
   local_files_only: false
   allow_cpu: false
-  attn_implementation: null
+  attn_implementation: sdpa
   enable_provisional_mrl_truncation: true
   normalize: true
   normalized_atol: 1.0e-6

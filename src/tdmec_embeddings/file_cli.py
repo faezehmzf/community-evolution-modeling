@@ -53,6 +53,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Rejected by policy; completed outputs must not be overwritten.",
     )
     parser.add_argument("--authorize-real-model", action="store_true")
+    parser.add_argument("--preflight-report")
     parser.add_argument("--authorize-bounded-pilot", action="store_true")
     return parser
 
@@ -102,6 +103,7 @@ def main(argv=None) -> int:
             config,
             authorize_real_model=args.authorize_real_model,
             authorize_bounded_pilot=args.authorize_bounded_pilot,
+            preflight_report_path=args.preflight_report,
         )
     except (ValueError, OSError, EmbeddingPipelineError, EmbeddingConfigError, SamplingError) as exc:
         print(f"REFUSED_OR_FAILED: {exc}", file=sys.stderr)

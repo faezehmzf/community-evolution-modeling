@@ -43,6 +43,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--skip-export", action="store_true")
     parser.add_argument("--authorize-real-model", action="store_true")
+    parser.add_argument(
+        "--preflight-report",
+        help="Required PASSED model-only preflight JSON for any Qwen execution.",
+    )
     parser.add_argument("--authorize-bounded-pilot", action="store_true")
     return parser
 
@@ -89,6 +93,7 @@ def main(argv=None) -> int:
             authorize_bounded_pilot=args.authorize_bounded_pilot,
             skip_export=bool(args.skip_export),
             package_root=args.package_root,
+            preflight_report_path=args.preflight_report,
         )
     except (ValueError, OSError, EmbeddingConfigError, PilotPipelineError) as exc:
         print(f"REFUSED_OR_FAILED: {exc}", file=sys.stderr)

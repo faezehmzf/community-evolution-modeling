@@ -1,3 +1,8 @@
+> **Superseded for execution:** do not run the monolithic dependency/pilot cells below.
+> Use `12_kaggle_embedding_recovery_runbook.md`, which pins Transformers 4.55.4,
+> requires a model-only preflight, and uses bounded resumable shard jobs. This file is
+> retained as historical design context only.
+
 # Kaggle GPU Runbook — TDMEC Embedding Stage (Preflight + Bounded Pilot)
 
 **Status:** `TARGET_KAGGLE_RUNBOOK_READY` · provisional engineering path  
@@ -291,7 +296,7 @@ pip install -r requirements/embeddings-target-studio.txt
 
 # If transformers/torch conflict, install embedding stack explicitly after checking versions:
 # pip install "transformers>=4.51,<5" "accelerate>=0.33,<2" "tokenizers>=0.19,<0.22" \
-#   "safetensors>=0.4,<0.6" "huggingface_hub>=0.24,<0.30" "psutil>=5.9,<7"
+#   "safetensors>=0.4,<0.6" "huggingface_hub>=0.30,<1" "psutil>=5.9,<7"
 
 python - <<'PY'
 import torch, transformers
